@@ -349,7 +349,7 @@ Declared in `Application/Abstractions`, implemented in `Infrastructure`.
 
 ### `IAppDbContext`
 
-Exposes 42 `DbSet<T>` properties plus `SaveChangesAsync`. The Application layer never sees a
+Exposes 41 `DbSet<T>` properties plus `SaveChangesAsync`. The Application layer never sees a
 SQL Server type.
 
 ### `IRetrievalService`
