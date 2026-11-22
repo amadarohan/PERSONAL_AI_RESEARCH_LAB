@@ -1,0 +1,392 @@
+@page "/reports"
+@rendermode InteractiveServer
+@inject ReportsService ReportsApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>گزارش‌ها — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">▣</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">گزارش‌ها به یک فضای کاری تعلق دارند.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">گزارش‌ها</h1>
+                <div class="text-sm text-secondary" style="margin-top: 4px;">
+                    هر ویرایش یک نسخه تازه می‌سازد؛ نسخه‌های قبلی هرگز بازنویسی نمی‌شوند.
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" @onclick="() => _showCreate = !_showCreate">
+                @(_showCreate ? "بستن" : "گزارش جدید")
+            </button>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_showCreate)
+        {
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">گزارش جدید</div>
+                    <div class="card-subtitle">متن با Markdown نوشته می‌شود و همان‌طور که هست ذخیره می‌گردد.</div>
+                </div>
+                <div class="stack">
+                    <div class="grid-2">
+                        <div class="field">
+                            <label class="field-label">عنوان</label>
+                            <input class="input" @bind="_newTitle" @bind:event="oninput" />
+                        </div>
+                        <div class="field">
+                            <label class="field-label">قالب</label>
+                            <select class="select" @bind="_newTemplate">
+                                <option value="technical">فنی</option>
+                                <option value="executive">خلاصه مدیریتی</option>
+                                <option value="literature">مرور ادبیات</option>
+                                <option value="comparison">مقایسه‌ای</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="field-label">متن گزارش (Markdown)</label>
+                        <textarea class="textarea" rows="10" @bind="_newMarkdown" @bind:event="oninput"
+                                  placeholder="# عنوان&#10;&#10;متن…"></textarea>
+                    </div>
+                    <button class="btn btn-primary"
+                            disabled="@(string.IsNullOrWhiteSpace(_newTitle) || _busy)"
+                            @onclick="CreateReportAsync">
+                        ساخت گزارش
+                    </button>
+                </div>
+            </section>
+        }
+
+        @if (_reports is null)
+        {
+            <div class="skeleton" style="height: 220px;"></div>
+        }
+        else if (_reports.Count == 0)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">▣</div>
+                <div class="empty-title">گزارشی وجود ندارد</div>
+                <div class="empty-text">
+                    تولید خودکار گزارش از یافته‌های پژوهش در این نسخه پیاده‌سازی نشده است؛ گزارش را دستی بنویسید.
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="split">
+                <aside class="split-side">
+                    <div class="card tight">
+                        <div class="card-title" style="margin-bottom: var(--space-3);">فهرست گزارش‌ها</div>
+                        <div class="stack-sm" style="max-height: 60vh; overflow-y: auto;">
+                            @foreach (var r in _reports)
+                            {
+                                <button class="btn btn-ghost btn-sm"
+                                        style="display:block; width:100%; text-align:start; @(r.Id == _selectedId ? "background: var(--surface-3);" : "")"
+                                        @onclick="() => SelectReportAsync(r.Id)">
+                                    <div class="truncate">@r.Title</div>
+                                    <div class="text-xs text-muted">
+                                        نسخه @JalaliDate.ToPersianDigits(r.CurrentVersionNumber)
+                                        · @JalaliDate.ToPersianDigits(r.VersionCount) نسخه
+                                        · @JalaliDate.FormatRelative(r.UpdatedAtUtc)
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="split-main">
+                    @if (_detail is null)
+                    {
+                        <div class="empty-state card">
+                            <div class="empty-icon">▣</div>
+                            <div class="empty-title">گزارشی انتخاب نشده است</div>
+                            <div class="empty-text">یک گزارش را از فهرست انتخاب کنید.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stack">
+                            <section class="card">
+                                <div class="row-between">
+                                    <div>
+                                        <div class="text-bold" style="font-size: var(--text-lg);">@_detail.Title</div>
+                                        <div class="row-wrap text-xs text-muted" style="margin-top: 4px;">
+                                            <span class="badge badge-neutral">@Labels.ReportTemplate(_detail.Template)</span>
+                                            <span>نسخه جاری: @JalaliDate.ToPersianDigits(_detail.CurrentVersionNumber)</span>
+                                            <span>ساخته‌شده @JalaliDate.FormatDate(_detail.CreatedAtUtc)</span>
+                                        </div>
+                                    </div>
+                                    <div class="row" style="gap: var(--space-2);">
+                                        <button class="btn btn-ghost btn-sm" @onclick="() => _showVersionForm = !_showVersionForm">
+                                            نسخه جدید
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" disabled="@_busy" @onclick="() => _confirmDelete = !_confirmDelete">
+                                            حذف
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @if (_confirmDelete)
+                                {
+                                    <div class="notice notice-danger" style="margin-top: var(--space-3);">
+                                        <span class="notice-icon">!</span>
+                                        <div class="stack-sm" style="flex: 1;">
+                                            <div>
+                                                حذف گزارش «@_detail.Title» و همه نسخه‌های آن قطعی و بازگشت‌ناپذیر است.
+                                                برای تأیید، عنوان گزارش را دقیقاً بنویسید.
+                                            </div>
+                                            <div class="row" style="gap: var(--space-2);">
+                                                <input class="input" @bind="_deleteConfirmText" @bind:event="oninput" placeholder="@_detail.Title" />
+                                                <button class="btn btn-danger btn-sm"
+                                                        disabled="@(_deleteConfirmText != _detail.Title || _busy)"
+                                                        @onclick="DeleteReportAsync">
+                                                    حذف قطعی
+                                                </button>
+                                                <button class="btn btn-ghost btn-sm" @onclick="() => { _confirmDelete = false; _deleteConfirmText = null; }">
+                                                    انصراف
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </section>
+
+                            @if (_showVersionForm)
+                            {
+                                <section class="card">
+                                    <div class="card-header">
+                                        <div class="card-title">افزودن نسخه</div>
+                                        <div class="card-subtitle">نسخه فعلی دست‌نخورده می‌ماند.</div>
+                                    </div>
+                                    <div class="stack">
+                                        <div class="field">
+                                            <label class="field-label">متن نسخه جدید</label>
+                                            <textarea class="textarea" rows="10" @bind="_versionMarkdown" @bind:event="oninput"></textarea>
+                                        </div>
+                                        <div class="field">
+                                            <label class="field-label">یادداشت تغییر</label>
+                                            <input class="input" @bind="_versionChangeNote" />
+                                        </div>
+                                        <button class="btn btn-primary"
+                                                disabled="@(string.IsNullOrWhiteSpace(_versionMarkdown) || _busy)"
+                                                @onclick="AddVersionAsync">
+                                            ثبت نسخه
+                                        </button>
+                                    </div>
+                                </section>
+                            }
+
+                            <section class="card">
+                                <div class="card-header">
+                                    <div class="card-title">نسخه‌ها</div>
+                                    <div class="spacer"></div>
+                                    <div class="text-xs text-muted">@JalaliDate.ToPersianDigits(_detail.Versions.Count)</div>
+                                </div>
+
+                                <div class="stack-sm">
+                                    @foreach (var v in _detail.Versions.OrderByDescending(x => x.VersionNumber))
+                                    {
+                                        <div class="panel">
+                                            <div class="row-between">
+                                                <div class="row" style="gap: var(--space-2);">
+                                                    <span class="badge @(v.VersionNumber == _detail.CurrentVersionNumber ? "badge-cyan" : "badge-neutral")">
+                                                        نسخه @JalaliDate.ToPersianDigits(v.VersionNumber)
+                                                    </span>
+                                                    <span class="text-xs text-muted">@JalaliDate.FormatDateTime(v.CreatedAtUtc)</span>
+                                                </div>
+                                                <button class="btn btn-ghost btn-sm"
+                                                        @onclick="() => _expandedVersionId = (_expandedVersionId == v.Id ? null : v.Id)">
+                                                    @(_expandedVersionId == v.Id ? "بستن" : "نمایش")
+                                                </button>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(v.ChangeNote))
+                                            {
+                                                <div class="text-xs text-secondary" style="margin-top: 2px;">@v.ChangeNote</div>
+                                            }
+                                            @if (_expandedVersionId == v.Id)
+                                            {
+                                                <div class="passage" style="margin-top: var(--space-3);">
+                                                    <div class="passage-text" style="white-space: pre-wrap; line-height: 2;">@v.Markdown</div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(v.CitationsJson) && v.CitationsJson != "[]")
+                                                {
+                                                    <div class="text-xs text-muted" style="margin-top: var(--space-2);">
+                                                        ارجاع‌ها: @v.CitationsJson
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </section>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ReportListItem>? _reports;
+    private ReportDetail? _detail;
+    private Guid? _selectedId;
+    private bool _showCreate;
+    private bool _showVersionForm;
+    private bool _confirmDelete;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string? _newTitle;
+    private string _newTemplate = "technical";
+    private string? _newMarkdown;
+
+    private string? _versionMarkdown;
+    private string? _versionChangeNote;
+    private string? _deleteConfirmText;
+    private Guid? _expandedVersionId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _reports = Array.Empty<ReportListItem>();
+            return;
+        }
+
+        _reports = await ReportsApi.ListAsync(workspaceId);
+    }
+
+    private async Task SelectReportAsync(Guid reportId)
+    {
+        _selectedId = reportId;
+        _detail = await ReportsApi.GetAsync(reportId);
+        _showVersionForm = false;
+        _confirmDelete = false;
+        _deleteConfirmText = null;
+        _expandedVersionId = _detail?.Versions
+            .OrderByDescending(v => v.VersionNumber)
+            .FirstOrDefault()?.Id;
+        _versionMarkdown = _detail?.Versions
+            .OrderByDescending(v => v.VersionNumber)
+            .FirstOrDefault()?.Markdown;
+        _versionChangeNote = null;
+    }
+
+    private async Task CreateReportAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var id = await ReportsApi.CreateAsync(
+                workspaceId, _newTitle!, _newTemplate, _newMarkdown ?? string.Empty, "[]", null);
+
+            _newTitle = null;
+            _newMarkdown = null;
+            _showCreate = false;
+            await LoadAsync();
+            await SelectReportAsync(id);
+            SetMessage("گزارش ساخته شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ساخت گزارش ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task AddVersionAsync()
+    {
+        if (_detail is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var version = await ReportsApi.AddVersionAsync(
+                _detail.Id, _versionMarkdown!, "[]", _versionChangeNote);
+
+            await LoadAsync();
+            await SelectReportAsync(_detail.Id);
+            SetMessage($"نسخه @JalaliDate.ToPersianDigits(version) ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت نسخه ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteReportAsync()
+    {
+        if (_detail is null || _deleteConfirmText != _detail.Title)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ReportsApi.DeleteAsync(_detail.Id);
+            _detail = null;
+            _selectedId = null;
+            _confirmDelete = false;
+            _deleteConfirmText = null;
+            await LoadAsync();
+            SetMessage("گزارش حذف شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"حذف ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

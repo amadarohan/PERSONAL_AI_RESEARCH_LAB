@@ -1,0 +1,446 @@
+@page "/learning"
+@rendermode InteractiveServer
+@inject LearningService LearningApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>یادگیری — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">◐</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">مسیرهای یادگیری به یک فضای کاری تعلق دارند.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">یادگیری</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                مرور کارت‌ها با الگوریتم SM-2 زمان‌بندی می‌شود؛ کیفیت کمتر از ۳ فاصله مرور را بازنشانی می‌کند.
+            </div>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_overview is null)
+        {
+            <div class="skeleton" style="height: 220px;"></div>
+        }
+        else
+        {
+            <div class="metric-grid">
+                <div class="metric" style="--metric-accent: var(--accent-violet);">
+                    <div class="metric-label">مسیرهای یادگیری</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Paths.Count)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-cyan);">
+                    <div class="metric-label">آزمون‌ها</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Quizzes.Count)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-amber);">
+                    <div class="metric-label">کارت‌های سررسید</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.DueCards.Count)</div>
+                    <div class="metric-hint">آماده مرور</div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">مسیرهای یادگیری</div>
+                    </div>
+
+                    @if (_overview.Paths.Count == 0)
+                    {
+                        <div class="empty-state" style="padding: var(--space-6) 0;">
+                            <div class="empty-icon">◐</div>
+                            <div class="empty-text">
+                                مسیر یادگیری وجود ندارد. ساخت خودکار مسیر از منابع در این نسخه پیاده‌سازی نشده است.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stack-sm">
+                            @foreach (var p in _overview.Paths)
+                            {
+                                <button class="btn btn-ghost btn-sm"
+                                        style="display:block; width:100%; text-align:start; @(p.Id == _selectedPathId ? "background: var(--surface-3);" : "")"
+                                        @onclick="() => SelectPathAsync(p.Id)">
+                                    <div class="row-between">
+                                        <span class="truncate">@p.Title</span>
+                                        @if (p.DueCount > 0)
+                                        {
+                                            <span class="badge badge-amber">@JalaliDate.ToPersianDigits(p.DueCount) سررسید</span>
+                                        }
+                                    </div>
+                                    <div class="text-xs text-muted">
+                                        @JalaliDate.ToPersianDigits(p.TopicCount) موضوع ·
+                                        @JalaliDate.ToPersianDigits(p.CardCount) کارت
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">آزمون‌ها</div>
+                    </div>
+
+                    @if (_overview.Quizzes.Count == 0)
+                    {
+                        <div class="empty-state" style="padding: var(--space-6) 0;">
+                            <div class="empty-icon">◐</div>
+                            <div class="empty-text">آزمونی وجود ندارد.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stack-sm">
+                            @foreach (var q in _overview.Quizzes)
+                            {
+                                <div class="panel">
+                                    <div class="row-between">
+                                        <div>
+                                            <div class="text-sm">@q.Title</div>
+                                            <div class="text-xs text-muted">
+                                                @JalaliDate.ToPersianDigits(q.QuestionCount) پرسش ·
+                                                @JalaliDate.ToPersianDigits(q.AttemptCount) تلاش
+                                                @if (q.LastCorrect is int lc && q.LastTotal is int lt)
+                                                {
+                                                    <span> · آخرین نتیجه: @JalaliDate.ToPersianDigits(lc)/@JalaliDate.ToPersianDigits(lt)</span>
+                                                }
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-ghost btn-sm" @onclick="() => StartQuizAsync(q.Id)">
+                                            شروع
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            </div>
+
+            @if (_path is not null)
+            {
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">@_path.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(_path.Objective))
+                        {
+                            <div class="card-subtitle">@_path.Objective</div>
+                        }
+                    </div>
+
+                    @if (_path.Topics.Count == 0)
+                    {
+                        <div class="text-sm text-muted">این مسیر موضوعی ندارد.</div>
+                    }
+                    else
+                    {
+                        <div class="stack-sm">
+                            @foreach (var t in _path.Topics.OrderBy(x => x.SortOrder))
+                            {
+                                <div class="panel">
+                                    <div class="row-between">
+                                        <div>
+                                            <div class="text-sm">@JalaliDate.ToPersianDigits(t.SortOrder). @t.Title</div>
+                                            @if (!string.IsNullOrWhiteSpace(t.Summary))
+                                            {
+                                                <div class="text-xs text-muted">@t.Summary</div>
+                                            }
+                                        </div>
+                                        <div class="row-wrap text-xs">
+                                            <span class="badge badge-neutral">@JalaliDate.ToPersianDigits(t.CardCount) کارت</span>
+                                            <span class="badge badge-emerald">@JalaliDate.ToPersianDigits(t.ReviewedCount) مرورشده</span>
+                                            @if (t.DueCount > 0)
+                                            {
+                                                <span class="badge badge-amber">@JalaliDate.ToPersianDigits(t.DueCount) سررسید</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">مرور کارت‌ها</div>
+                    <div class="card-subtitle">کیفیت یادآوری را از ۰ (فراموش) تا ۵ (کامل) ثبت کنید.</div>
+                </div>
+
+                @if (_overview.DueCards.Count == 0)
+                {
+                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                        <div class="empty-icon">✓</div>
+                        <div class="empty-title">کارتی برای مرور نیست</div>
+                        <div class="empty-text">همه کارت‌ها در زمان‌بندی فعلی مرور شده‌اند.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack">
+                        @foreach (var card in _overview.DueCards)
+                        {
+                            <div class="panel">
+                                <div class="row-between">
+                                    <div class="text-xs text-muted">@card.TopicTitle</div>
+                                    <div class="text-xs text-muted">
+                                        تکرار @JalaliDate.ToPersianDigits(card.Repetitions) ·
+                                        فاصله @JalaliDate.ToPersianDigits(card.IntervalDays) روز ·
+                                        ضریب @card.EaseFactor.ToString("0.00")
+                                    </div>
+                                </div>
+                                <div class="text-sm text-bold" style="margin-top: var(--space-2);">@card.Front</div>
+
+                                @if (_revealedCards.Contains(card.Id))
+                                {
+                                    <div class="passage" style="margin-top: var(--space-2);">
+                                        <div class="passage-text">@card.Back</div>
+                                    </div>
+                                    <div class="row-wrap" style="margin-top: var(--space-3);">
+                                        @for (var q = 0; q <= 5; q++)
+                                        {
+                                            var quality = q;
+                                            <button class="btn btn-sm @(quality >= 3 ? "btn-primary" : "btn-ghost")"
+                                                    disabled="@_busy"
+                                                    @onclick="() => ReviewAsync(card.Id, quality)">
+                                                @JalaliDate.ToPersianDigits(quality)
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-2);"
+                                            @onclick="() => _revealedCards.Add(card.Id)">
+                                        نمایش پاسخ
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            @if (_quiz is not null)
+            {
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">@_quiz.Title</div>
+                        <div class="spacer"></div>
+                        <button class="btn btn-ghost btn-sm" @onclick="() => { _quiz = null; _quizResult = null; }">بستن</button>
+                    </div>
+
+                    @if (_quiz.Questions.Count == 0)
+                    {
+                        <div class="text-sm text-muted">این آزمون پرسشی ندارد.</div>
+                    }
+                    else
+                    {
+                        <div class="stack">
+                            @foreach (var question in _quiz.Questions)
+                            {
+                                var options = ParseOptions(question.OptionsJson);
+                                <div class="panel">
+                                    <div class="text-sm text-bold">@question.Prompt</div>
+
+                                    @if (options.Count > 0)
+                                    {
+                                        <div class="stack-sm" style="margin-top: var(--space-2);">
+                                            @for (var i = 0; i < options.Count; i++)
+                                            {
+                                                var index = i;
+                                                var chosen = _answers.TryGetValue(question.Id, out var a) && a == index;
+                                                <button class="btn btn-sm @(chosen ? "btn-primary" : "btn-ghost")"
+                                                        style="display:block; width:100%; text-align:start;"
+                                                        disabled="@(_quizResult is not null)"
+                                                        @onclick="() => _answers[question.Id] = index">
+                                                    @JalaliDate.ToPersianDigits(index + 1). @options[index]
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="field-hint" style="margin-top: var(--space-2);">
+                                            این پرسش گزینه‌ای ندارد؛ پاسخ تشریحی ثبت نشده است.
+                                        </div>
+                                    }
+
+                                    @if (_quizResult is not null)
+                                    {
+                                        var result = _quizResult.Results.FirstOrDefault(r => r.QuestionId == question.Id);
+                                        if (result is not null)
+                                        {
+                                            <div class="text-xs @(result.IsCorrect ? "text-emerald" : "text-crimson")"
+                                                 style="margin-top: var(--space-2);">
+                                                @(result.IsCorrect ? "پاسخ درست" : "پاسخ نادرست")
+                                                @if (result.CorrectIndex is int ci)
+                                                {
+                                                    <span> · گزینه درست: @JalaliDate.ToPersianDigits(ci + 1)</span>
+                                                }
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(result.Explanation))
+                                            {
+                                                <div class="text-xs text-muted">@result.Explanation</div>
+                                            }
+                                        }
+                                    }
+                                </div>
+                            }
+
+                            @if (_quizResult is null)
+                            {
+                                <button class="btn btn-primary"
+                                        disabled="@(_answers.Count == 0 || _busy)"
+                                        @onclick="SubmitQuizAsync">
+                                    ثبت پاسخ‌ها
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="notice notice-info">
+                                    <span class="notice-icon">✓</span>
+                                    <div>
+                                        نتیجه: @JalaliDate.ToPersianDigits(_quizResult.CorrectCount)
+                                        از @JalaliDate.ToPersianDigits(_quizResult.TotalCount) پاسخ درست.
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+        }
+    </div>
+}
+
+@code {
+    private LearningOverview? _overview;
+    private LearningPathDetail? _path;
+    private Guid? _selectedPathId;
+    private QuizDetail? _quiz;
+    private QuizAttemptResult? _quizResult;
+    private readonly Dictionary<Guid, int> _answers = new();
+    private readonly HashSet<Guid> _revealedCards = new();
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _overview = null;
+            return;
+        }
+
+        _overview = await LearningApi.GetOverviewAsync(workspaceId);
+    }
+
+    private async Task SelectPathAsync(Guid pathId)
+    {
+        _selectedPathId = pathId;
+        _path = await LearningApi.GetPathAsync(pathId);
+    }
+
+    private async Task ReviewAsync(Guid flashcardId, int quality)
+    {
+        _busy = true;
+        try
+        {
+            var outcome = await LearningApi.ReviewCardAsync(flashcardId, quality);
+            _revealedCards.Remove(flashcardId);
+            await LoadAsync();
+            SetMessage(
+                $"مرور ثبت شد. مرور بعدی: {JalaliDate.FormatDate(outcome.DueAtUtc)} (فاصله {JalaliDate.ToPersianDigits(outcome.IntervalDays)} روز).",
+                isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت مرور ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StartQuizAsync(Guid quizId)
+    {
+        _quiz = await LearningApi.GetQuizAsync(quizId);
+        _quizResult = null;
+        _answers.Clear();
+    }
+
+    private async Task SubmitQuizAsync()
+    {
+        if (_quiz is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _quizResult = await LearningApi.SubmitAttemptAsync(_quiz.Id, _answers);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت پاسخ‌ها ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static IReadOnlyList<string> ParseOptions(string? optionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(optionsJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(optionsJson) ?? new List<string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

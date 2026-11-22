@@ -1,0 +1,115 @@
+@page "/documents/{Id:guid}"
+@rendermode InteractiveServer
+@inject SearchService SearchApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>خواندن سند — رصدخانه دانش</PageTitle>
+
+@if (_document is null)
+{
+    <div class="skeleton" style="height: 300px;"></div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">@_document.Title</h1>
+                <div class="row-wrap text-xs text-muted" style="margin-top: 4px;">
+                    @if (!string.IsNullOrWhiteSpace(_document.Author))
+                    {
+                        <span>@_document.Author</span>
+                        <span>·</span>
+                    }
+                    <span>@JalaliDate.ToPersianDigits(_document.PageCount) صفحه</span>
+                    <span>·</span>
+                    <span>@JalaliDate.ToPersianDigits(_document.CharacterCount) نویسه</span>
+                    @if (!string.IsNullOrWhiteSpace(_document.Language))
+                    {
+                        <span>·</span>
+                        <span>زبان: @_document.Language</span>
+                    }
+                </div>
+            </div>
+            <div class="row">
+                <a class="btn btn-ghost btn-sm" href="/sources/@_document.SourceId">منبع</a>
+                <a class="btn btn-ghost btn-sm" href="/sources">کتابخانه</a>
+            </div>
+        </div>
+
+        @if (_document.UsedOcr)
+        {
+            <div class="notice notice-warn">
+                <span class="notice-icon">◐</span>
+                <div>
+                    <div class="text-bold">متن با تشخیص نوری نویسه استخراج شده است.</div>
+                    <div class="text-sm">ممکن است نویسه‌های فارسی جابه‌جا یا ناقص باشند؛ در ارجاع‌دهی این نکته را در نظر بگیرید.</div>
+                </div>
+            </div>
+        }
+
+        @if (_document.Pages.Count == 0)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">▦</div>
+                <div class="empty-title">متنی برای این سند استخراج نشده است</div>
+                <div class="empty-text">پردازش ممکن است هنوز در جریان باشد یا استخراج ناموفق بوده باشد.</div>
+            </div>
+        }
+        else
+        {
+            <div class="split">
+                <aside class="split-side">
+                    <div class="card tight">
+                        <div class="card-title" style="margin-bottom: var(--space-3);">صفحه‌ها</div>
+                        <div class="stack-sm" style="max-height: 60vh; overflow-y: auto;">
+                            @foreach (var p in _document.Pages)
+                            {
+                                <button class="btn btn-ghost btn-sm"
+                                        style="justify-content: flex-start; width: 100%; @(p.PageNumber == _activePage ? "background: var(--surface-3);" : "")"
+                                        @onclick="() => _activePage = p.PageNumber">
+                                    صفحه @JalaliDate.ToPersianDigits(p.PageNumber)
+                                    @if (p.OcrApplied)
+                                    {
+                                        <span class="badge badge-amber" style="margin-inline-start: auto;">OCR</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="split-main">
+                    @{
+                        var currentPage = _document.Pages.FirstOrDefault(p => p.PageNumber == _activePage) ?? _document.Pages[0];
+                    }
+                    <section class="card">
+                        <div class="card-header">
+                            <div class="card-title">صفحه @JalaliDate.ToPersianDigits(currentPage.PageNumber)</div>
+                            <div class="spacer"></div>
+                            <div class="text-xs text-muted">
+                                @JalaliDate.ToPersianDigits(currentPage.Text.Length) نویسه
+                            </div>
+                        </div>
+                        <div class="passage-text" style="white-space: pre-wrap; line-height: 2;">@currentPage.Text</div>
+                    </section>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private DocumentReaderModel? _document;
+    private int _activePage = 1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        _document = await SearchApi.GetDocumentAsync(Id);
+        _activePage = _document?.Pages.FirstOrDefault()?.PageNumber ?? 1;
+    }
+}

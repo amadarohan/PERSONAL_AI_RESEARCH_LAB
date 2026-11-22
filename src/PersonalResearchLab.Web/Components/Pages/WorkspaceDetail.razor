@@ -1,0 +1,218 @@
+@page "/workspaces/{Id:guid}"
+@rendermode InteractiveServer
+@inject WorkspaceService Workspaces
+@inject WorkspaceContext WorkspaceContext
+@inject NavigationManager Nav
+
+<PageTitle>ویرایش فضای کاری — رصدخانه دانش</PageTitle>
+
+@if (_workspace is null)
+{
+    <div class="skeleton" style="height: 240px;"></div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <div class="row" style="gap: var(--space-2);">
+                    <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">@_workspace.Name</h1>
+                    @if (_workspace.IsArchived)
+                    {
+                        <span class="badge badge-neutral">بایگانی</span>
+                    }
+                </div>
+                <div class="text-xs text-muted" style="margin-top: 4px;">
+                    شناسه: @_workspace.Slug · ساخته‌شده @JalaliDate.FormatDate(_workspace.CreatedAtUtc)
+                </div>
+            </div>
+            <a class="btn btn-ghost btn-sm" href="/workspaces">بازگشت</a>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">مشخصات</div>
+                <div class="card-subtitle">تغییرات پس از ذخیره بلافاصله اعمال می‌شوند.</div>
+            </div>
+
+            <div class="stack">
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label">نام</label>
+                        <input class="input" @bind="_name" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label">رنگ شاخص</label>
+                        <input class="input" @bind="_accentColor" placeholder="#22D3EE" />
+                        <div class="field-hint">کد رنگ HEX برای نشانه‌گذاری این فضا در فهرست‌ها.</div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label class="field-label">هدف</label>
+                    <input class="input" @bind="_objective" />
+                </div>
+
+                <div class="field">
+                    <label class="field-label">توضیح</label>
+                    <textarea class="textarea" rows="2" @bind="_description"></textarea>
+                </div>
+
+                <div class="field">
+                    <label class="field-label">دستورهای هوش مصنوعی</label>
+                    <textarea class="textarea" rows="3" @bind="_instructions"></textarea>
+                    <div class="field-hint">به هر درخواست هوش مصنوعی در این فضا افزوده می‌شود.</div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label">سیاست مسیریابی داده</label>
+                        <select class="select" @bind="_dataRoute">
+                            <option value="@DataRoute.LocalOnly">فقط محلی</option>
+                            <option value="@DataRoute.CloudAllowed">ابر مجاز</option>
+                        </select>
+                        <div class="field-hint">
+                            در حالت «فقط محلی»، ارائه‌دهنده‌های ابری هرگز برای این فضا انتخاب نمی‌شوند.
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="field-label">زبان ترجیحی</label>
+                        <input class="input" @bind="_preferredLanguage" />
+                    </div>
+                </div>
+
+                <label class="checkbox-row text-sm">
+                    <input type="checkbox" @bind="_allowCrossWorkspace" />
+                    اجازه بازیابی از سایر فضاهای کاری
+                </label>
+                <div class="field-hint" style="margin-top: -8px;">
+                    در حالت خاموش، جست‌وجو و همراه پژوهش فقط به منابع همین فضا دسترسی دارند.
+                </div>
+
+                <div class="row">
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">ذخیره</button>
+                    <button class="btn btn-ghost" disabled="@_busy" @onclick="ReloadAsync">بازگردانی</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">وضعیت</div>
+            </div>
+            <div class="metric-grid">
+                <div class="metric" style="--metric-accent: var(--accent-blue);">
+                    <div class="metric-label">منابع</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_summary?.SourceCount ?? 0)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-cyan);">
+                    <div class="metric-label">ادعاها</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_summary?.ClaimCount ?? 0)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-violet);">
+                    <div class="metric-label">گره‌های دانش</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_summary?.NodeCount ?? 0)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-amber);">
+                    <div class="metric-label">پژوهش‌ها</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_summary?.RunCount ?? 0)</div>
+                </div>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ResearchWorkspace? _workspace;
+    private WorkspaceSummary? _summary;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string _name = string.Empty;
+    private string? _objective;
+    private string? _description;
+    private string? _instructions;
+    private string _accentColor = "#22D3EE";
+    private string _preferredLanguage = "fa-IR";
+    private DataRoute _dataRoute = DataRoute.LocalOnly;
+    private bool _allowCrossWorkspace;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _workspace = await Workspaces.GetAsync(Id);
+        _summary = await Workspaces.GetSummaryAsync(Id);
+
+        if (_workspace is null)
+        {
+            return;
+        }
+
+        _name = _workspace.Name;
+        _objective = _workspace.Objective;
+        _description = _workspace.Description;
+        _instructions = _workspace.AiInstructions;
+        _accentColor = _workspace.AccentColor;
+        _preferredLanguage = _workspace.PreferredLanguage;
+        _dataRoute = _workspace.DataRoute;
+        _allowCrossWorkspace = _workspace.AllowCrossWorkspaceAccess;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            SetMessage("نام فضای کاری نمی‌تواند خالی باشد.", isError: true);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Workspaces.UpdateAsync(Id, new UpdateWorkspaceRequest(
+                _name,
+                _description,
+                _objective,
+                _accentColor,
+                _preferredLanguage,
+                _dataRoute,
+                _allowCrossWorkspace,
+                _instructions));
+
+            await WorkspaceContext.RefreshAsync();
+            await ReloadAsync();
+            SetMessage("تغییرات ذخیره شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ذخیره ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

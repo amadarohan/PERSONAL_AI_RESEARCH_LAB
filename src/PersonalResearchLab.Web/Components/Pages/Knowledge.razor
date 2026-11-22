@@ -1,0 +1,452 @@
+@page "/knowledge"
+@rendermode InteractiveServer
+@inject KnowledgeGraphService GraphApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>گراف دانش — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">⬡</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">گراف دانش به یک فضای کاری گره می‌خورد.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">گراف دانش</h1>
+                <div class="text-sm text-secondary" style="margin-top: 4px;">
+                    مفاهیم، افراد، فناوری‌ها و روابط میان آن‌ها در فضای <span class="text-cyan">@WorkspaceContext.Active.Name</span>.
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" @onclick="() => _showCreate = !_showCreate">
+                @(_showCreate ? "بستن" : "افزودن")
+            </button>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_graph is not null)
+        {
+            <div class="metric-grid">
+                <div class="metric" style="--metric-accent: var(--accent-violet);">
+                    <div class="metric-label">گره‌ها</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_graph.Counts.NodeCount)</div>
+                    <div class="metric-hint">@JalaliDate.ToPersianDigits(_graph.Counts.ConfirmedNodeCount) تأییدشده</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-cyan);">
+                    <div class="metric-label">روابط</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_graph.Counts.RelationshipCount)</div>
+                    <div class="metric-hint">@JalaliDate.ToPersianDigits(_graph.Counts.UnconfirmedRelationshipCount) تأییدنشده</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-amber);">
+                    <div class="metric-label">گره‌های بی‌رابطه</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_graph.Counts.OrphanNodeCount)</div>
+                    <div class="metric-hint">بدون هیچ یال</div>
+                </div>
+            </div>
+        }
+
+        @if (_showCreate)
+        {
+            <div class="grid-2">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">گره جدید</div>
+                    </div>
+                    <div class="stack">
+                        <div class="field">
+                            <label class="field-label">نام</label>
+                            <input class="input" @bind="_nodeName" @bind:event="oninput" />
+                        </div>
+                        <div class="field">
+                            <label class="field-label">نوع</label>
+                            <select class="select" @bind="_nodeKind">
+                                @foreach (var kind in Enum.GetValues<KnowledgeNodeKind>())
+                                {
+                                    <option value="@kind">@Labels.NodeKindLabel(kind)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">توضیح</label>
+                            <textarea class="textarea" rows="2" @bind="_nodeDescription"></textarea>
+                        </div>
+                        <button class="btn btn-primary"
+                                disabled="@(string.IsNullOrWhiteSpace(_nodeName) || _busy)"
+                                @onclick="CreateNodeAsync">
+                            ثبت گره
+                        </button>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">رابطه جدید</div>
+                        <div class="card-subtitle">هر دو گره باید در همین فضای کاری باشند.</div>
+                    </div>
+                    <div class="stack">
+                        <div class="field">
+                            <label class="field-label">از گره</label>
+                            <select class="select" @bind="_fromNodeId">
+                                <option value="@Guid.Empty">— انتخاب کنید —</option>
+                                @foreach (var n in _graph?.Nodes ?? Array.Empty<KnowledgeNodeView>())
+                                {
+                                    <option value="@n.Id">@n.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">به گره</label>
+                            <select class="select" @bind="_toNodeId">
+                                <option value="@Guid.Empty">— انتخاب کنید —</option>
+                                @foreach (var n in _graph?.Nodes ?? Array.Empty<KnowledgeNodeView>())
+                                {
+                                    <option value="@n.Id">@n.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">نوع رابطه</label>
+                            <select class="select" @bind="_relationKind">
+                                @foreach (var kind in Enum.GetValues<KnowledgeRelationKind>())
+                                {
+                                    <option value="@kind">@Labels.RelationKindLabel(kind)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">توضیح</label>
+                            <input class="input" @bind="_relationDescription" />
+                        </div>
+                        <button class="btn btn-primary"
+                                disabled="@(_fromNodeId == Guid.Empty || _toNodeId == Guid.Empty || _fromNodeId == _toNodeId || _busy)"
+                                @onclick="CreateRelationshipAsync">
+                            ثبت رابطه
+                        </button>
+                        @if (_fromNodeId != Guid.Empty && _fromNodeId == _toNodeId)
+                        {
+                            <div class="field-hint text-crimson">یک گره نمی‌تواند به خودش مرتبط شود.</div>
+                        }
+                    </div>
+                </section>
+            </div>
+        }
+
+        @if (_graph is null)
+        {
+            <div class="skeleton" style="height: 220px;"></div>
+        }
+        else if (_graph.Nodes.Count == 0)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">⬡</div>
+                <div class="empty-title">گراف دانش خالی است</div>
+                <div class="empty-text">
+                    گره‌ها در این نسخه به‌صورت دستی ساخته می‌شوند. استخراج خودکار گره از متن پیاده‌سازی نشده است.
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="split">
+                <aside class="split-side">
+                    <div class="card tight">
+                        <div class="card-title" style="margin-bottom: var(--space-3);">گره‌ها</div>
+                        <div class="stack-sm" style="max-height: 60vh; overflow-y: auto;">
+                            @foreach (var n in _graph.Nodes)
+                            {
+                                <button class="btn btn-ghost btn-sm"
+                                        style="display:block; width:100%; text-align:start; @(n.Id == _selectedNodeId ? "background: var(--surface-3);" : "")"
+                                        @onclick="() => SelectNodeAsync(n.Id)">
+                                    <div class="row-between">
+                                        <span class="truncate">@n.Name</span>
+                                        @if (!n.IsUserConfirmed)
+                                        {
+                                            <span class="badge badge-amber">تأییدنشده</span>
+                                        }
+                                    </div>
+                                    <div class="text-xs text-muted">@Labels.NodeKindLabel(n.Kind)</div>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="split-main">
+                    @if (_node is null)
+                    {
+                        <div class="empty-state card">
+                            <div class="empty-icon">⬡</div>
+                            <div class="empty-title">گره‌ای انتخاب نشده است</div>
+                            <div class="empty-text">برای دیدن روابط، یک گره را از فهرست انتخاب کنید.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stack">
+                            <section class="card">
+                                <div class="row-between">
+                                    <div>
+                                        <div class="row" style="gap: var(--space-2);">
+                                            <span class="text-bold" style="font-size: var(--text-lg);">@_node.Name</span>
+                                            <span class="badge badge-violet">@Labels.NodeKindLabel(_node.Kind)</span>
+                                            @if (_node.IsUserConfirmed)
+                                            {
+                                                <span class="badge badge-emerald">تأییدشده</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge badge-amber">تأییدنشده</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(_node.Description))
+                                        {
+                                            <div class="text-sm text-secondary" style="margin-top: var(--space-2);">@_node.Description</div>
+                                        }
+                                        <div class="text-xs text-muted" style="margin-top: var(--space-2);">
+                                            @JalaliDate.ToPersianDigits(_node.SourceCount) منبع پشتیبان ·
+                                            ساخته‌شده @JalaliDate.FormatDate(_node.CreatedAtUtc)
+                                        </div>
+                                    </div>
+                                    @if (!_node.IsUserConfirmed)
+                                    {
+                                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="ConfirmNodeAsync">
+                                            تأیید گره
+                                        </button>
+                                    }
+                                </div>
+                            </section>
+
+                            <section class="card">
+                                <div class="card-header">
+                                    <div class="card-title">روابط</div>
+                                    <div class="spacer"></div>
+                                    <div class="text-xs text-muted">
+                                        @JalaliDate.ToPersianDigits(_node.Outgoing.Count + _node.Incoming.Count) رابطه
+                                    </div>
+                                </div>
+
+                                @if (_node.Outgoing.Count == 0 && _node.Incoming.Count == 0)
+                                {
+                                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                                        <div class="empty-icon">∅</div>
+                                        <div class="empty-text">این گره هیچ رابطه‌ای ندارد.</div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="stack-sm">
+                                        @foreach (var edge in _node.Outgoing.Concat(_node.Incoming))
+                                        {
+                                            <div class="panel">
+                                                <div class="row-between">
+                                                    <div class="text-sm">
+                                                        @if (edge.IsOutgoing)
+                                                        {
+                                                            <span>@_node.Name <span class="text-cyan">— @Labels.RelationKindLabel(edge.Kind) →</span> @edge.OtherNodeName</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@edge.OtherNodeName <span class="text-cyan">— @Labels.RelationKindLabel(edge.Kind) →</span> @_node.Name</span>
+                                                        }
+                                                    </div>
+                                                    <div class="row" style="gap: var(--space-2);">
+                                                        @if (edge.IsUserConfirmed)
+                                                        {
+                                                            <span class="badge badge-emerald">تأییدشده</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge badge-amber">تأییدنشده</span>
+                                                            <button class="btn btn-ghost btn-sm" disabled="@_busy"
+                                                                    @onclick="() => ConfirmRelationshipAsync(edge.RelationshipId)">
+                                                                تأیید
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(edge.Description))
+                                                {
+                                                    <div class="text-xs text-muted" style="margin-top: 2px;">@edge.Description</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </section>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private KnowledgeGraphView? _graph;
+    private KnowledgeNodeDetail? _node;
+    private Guid? _selectedNodeId;
+    private bool _showCreate;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string? _nodeName;
+    private string? _nodeDescription;
+    private KnowledgeNodeKind _nodeKind = KnowledgeNodeKind.Concept;
+
+    private Guid _fromNodeId = Guid.Empty;
+    private Guid _toNodeId = Guid.Empty;
+    private KnowledgeRelationKind _relationKind = KnowledgeRelationKind.RelatedTo;
+    private string? _relationDescription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadGraphAsync();
+    }
+
+    private async Task LoadGraphAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _graph = null;
+            return;
+        }
+
+        _graph = await GraphApi.GetGraphAsync(workspaceId);
+    }
+
+    private async Task SelectNodeAsync(Guid nodeId)
+    {
+        _selectedNodeId = nodeId;
+        _node = await GraphApi.GetNodeAsync(nodeId);
+    }
+
+    private async Task CreateNodeAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var id = await GraphApi.CreateNodeAsync(workspaceId, _nodeName!, _nodeKind, _nodeDescription);
+            _nodeName = null;
+            _nodeDescription = null;
+            await LoadGraphAsync();
+            await SelectNodeAsync(id);
+            SetMessage("گره ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت گره ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CreateRelationshipAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await GraphApi.CreateRelationshipAsync(
+                workspaceId, _fromNodeId, _toNodeId, _relationKind, _relationDescription);
+
+            _relationDescription = null;
+            await LoadGraphAsync();
+
+            if (_selectedNodeId is Guid selected)
+            {
+                await SelectNodeAsync(selected);
+            }
+
+            SetMessage("رابطه ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت رابطه ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ConfirmNodeAsync()
+    {
+        if (_node is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await GraphApi.ConfirmNodeAsync(_node.Id);
+            await LoadGraphAsync();
+            await SelectNodeAsync(_node.Id);
+            SetMessage("گره تأیید شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تأیید ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ConfirmRelationshipAsync(Guid relationshipId)
+    {
+        _busy = true;
+        try
+        {
+            await GraphApi.ConfirmRelationshipAsync(relationshipId);
+            if (_selectedNodeId is Guid selected)
+            {
+                await SelectNodeAsync(selected);
+            }
+            await LoadGraphAsync();
+            SetMessage("رابطه تأیید شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تأیید ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

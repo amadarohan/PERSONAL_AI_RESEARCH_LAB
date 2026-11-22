@@ -1,0 +1,385 @@
+@page "/sources"
+@rendermode InteractiveServer
+@inject SourceService SourceApi
+@inject WorkspaceContext WorkspaceContext
+@inject NavigationManager Nav
+
+<PageTitle>کتابخانه منابع — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">▤</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">منابع همیشه درون یک فضای کاری نگهداری می‌شوند. ابتدا یک فضای کاری بسازید یا انتخاب کنید.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">کتابخانه منابع</h1>
+                <div class="text-sm text-secondary" style="margin-top: 4px;">
+                    فضای فعال: <span class="text-cyan">@WorkspaceContext.Active.Name</span>
+                </div>
+            </div>
+            <div class="row">
+                <label class="checkbox-row text-sm">
+                    <input type="checkbox" checked="@_includeArchived" @onchange="ToggleArchivedAsync" />
+                    نمایش بایگانی‌شده‌ها
+                </label>
+                <button class="btn btn-primary btn-sm" @onclick="() => _showUpload = !_showUpload">
+                    @(_showUpload ? "بستن" : "افزودن منبع")
+                </button>
+            </div>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_showUpload)
+        {
+            <div class="grid-2">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">بارگذاری فایل</div>
+                        <div class="card-subtitle">
+                            PDF، Word، متن، Markdown، HTML، CSV، JSON و تصویر. حداکثر حجم در تنظیمات سرور تعیین می‌شود.
+                        </div>
+                    </div>
+
+                    <div class="stack">
+                        <div class="field">
+                            <label class="field-label">فایل</label>
+                            <InputFile OnChange="OnFileSelected" class="input" />
+                            @if (_selectedFile is not null)
+                            {
+                                <div class="field-hint">
+                                    @_selectedFile.Name — @JalaliDate.FormatBytes(_selectedFile.Size)
+                                </div>
+                            }
+                        </div>
+
+                        <div class="field">
+                            <label class="field-label">عنوان (اختیاری)</label>
+                            <input class="input" @bind="_uploadTitle" placeholder="در صورت خالی بودن، از نام فایل استفاده می‌شود" />
+                        </div>
+
+                        <div class="row">
+                            <button class="btn btn-primary" disabled="@(_selectedFile is null || _busy)" @onclick="UploadAsync">
+                                بارگذاری و پردازش
+                            </button>
+                            <button class="btn btn-ghost" @onclick="ClearUpload">پاک‌کردن</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title">یادداشت دستی</div>
+                        <div class="card-subtitle">متن تایپ‌شده بدون نیاز به استخراج، مستقیماً قطعه‌بندی و نمایه می‌شود.</div>
+                    </div>
+
+                    <div class="stack">
+                        <div class="field">
+                            <label class="field-label">عنوان</label>
+                            <input class="input" @bind="_noteTitle" @bind:event="oninput" />
+                        </div>
+                        <div class="field">
+                            <label class="field-label">متن</label>
+                            <textarea class="textarea" rows="6" @bind="_noteBody" @bind:event="oninput"></textarea>
+                        </div>
+                        <button class="btn btn-primary"
+                                disabled="@(string.IsNullOrWhiteSpace(_noteTitle) || string.IsNullOrWhiteSpace(_noteBody) || _busy)"
+                                @onclick="CreateNoteAsync">
+                            ثبت یادداشت
+                        </button>
+                    </div>
+                </section>
+            </div>
+        }
+
+        @if (_items is null)
+        {
+            <div class="skeleton" style="height: 200px;"></div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">▦</div>
+                <div class="empty-title">این فضا هنوز منبعی ندارد</div>
+                <div class="empty-text">
+                    بدون منبع، جست‌وجو و همراه پژوهش پاسخی نخواهند داشت. یک فایل بارگذاری کنید یا یادداشت بنویسید.
+                </div>
+            </div>
+        }
+        else
+        {
+            <section class="card flush">
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                            <tr>
+                                <th>عنوان</th>
+                                <th>نوع</th>
+                                <th>وضعیت پردازش</th>
+                                <th>حجم</th>
+                                <th>اعتبار</th>
+                                <th>افزوده‌شده</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _items)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="row" style="gap: var(--space-2);">
+                                            <span class="text-bold">@s.Title</span>
+                                            @if (s.IsArchived)
+                                            {
+                                                <span class="badge badge-neutral">بایگانی</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(s.Author))
+                                        {
+                                            <div class="text-xs text-muted">@s.Author</div>
+                                        }
+                                    </td>
+                                    <td><span class="badge badge-neutral">@Labels.SourceKindLabel(s.Kind)</span></td>
+                                    <td>
+                                        @if (s.LatestVersion is null)
+                                        {
+                                            <span class="text-xs text-muted">بدون نسخه</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="row" style="gap: var(--space-2);">
+                                                <span class="badge @Labels.StatusBadge(s.LatestVersion.Status)">
+                                                    <span class="dot @(s.LatestVersion.Status == ProcessingStatus.Running ? "dot-pulse" : "")"></span>
+                                                    @Labels.StatusLabel(s.LatestVersion.Status)
+                                                </span>
+                                                @* "v@..." is parsed as an email address by Razor, so the expression must be explicit. *@
+                                                <span class="text-xs text-muted">@($"نسخه {JalaliDate.ToPersianDigits(s.LatestVersion.VersionNumber)}")</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(s.LatestVersion.ProcessingError))
+                                            {
+                                                <div class="text-xs text-crimson" style="margin-top: 2px;">@s.LatestVersion.ProcessingError</div>
+                                            }
+                                            @if (s.LatestVersion.PageCount > 0)
+                                            {
+                                                <div class="text-xs text-muted" style="margin-top: 2px;">
+                                                    @JalaliDate.ToPersianDigits(s.LatestVersion.PageCount) صفحه ·
+                                                    @JalaliDate.ToPersianDigits(s.LatestVersion.CharacterCount) نویسه
+                                                </div>
+                                            }
+                                        }
+                                    </td>
+                                    <td class="tabular text-sm">@JalaliDate.FormatBytes(s.SizeBytes)</td>
+                                    <td>
+                                        @if (s.ReliabilityRating is null)
+                                        {
+                                            <span class="text-xs text-muted">ارزیابی‌نشده</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-sm tabular">@JalaliDate.ToPersianDigits(s.ReliabilityRating.Value)٪</span>
+                                        }
+                                    </td>
+                                    <td class="text-xs text-muted nowrap">@JalaliDate.FormatDate(s.CreatedAtUtc)</td>
+                                    <td>
+                                        <div class="row-wrap" style="gap: var(--space-1);">
+                                            @if (s.LatestVersion?.Status == ProcessingStatus.Succeeded)
+                                            {
+                                                <a class="btn btn-ghost btn-sm" href="/sources/@s.Id">جزئیات</a>
+                                            }
+                                            else
+                                            {
+                                                <a class="btn btn-ghost btn-sm" href="/sources/@s.Id">جزئیات</a>
+                                            }
+                                            <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => ReprocessAsync(s)">
+                                                پردازش مجدد
+                                            </button>
+                                            <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => ToggleArchiveAsync(s)">
+                                                @(s.IsArchived ? "بازگردانی" : "بایگانی")
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<SourceListItem>? _items;
+    private bool _includeArchived;
+    private bool _showUpload;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private IBrowserFile? _selectedFile;
+    private string? _uploadTitle;
+    private string? _noteTitle;
+    private string? _noteBody;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _items = Array.Empty<SourceListItem>();
+            return;
+        }
+
+        _items = await SourceApi.ListAsync(workspaceId, _includeArchived);
+    }
+
+    private async Task ToggleArchivedAsync(ChangeEventArgs args)
+    {
+        _includeArchived = args.Value is bool b && b;
+        await LoadAsync();
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs args)
+    {
+        _selectedFile = args.File;
+        if (string.IsNullOrWhiteSpace(_uploadTitle))
+        {
+            _uploadTitle = Path.GetFileNameWithoutExtension(args.File.Name);
+        }
+    }
+
+    private void ClearUpload()
+    {
+        _selectedFile = null;
+        _uploadTitle = null;
+    }
+
+    private async Task UploadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId || _selectedFile is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 104_857_600);
+            var result = await SourceApi.UploadAsync(
+                workspaceId,
+                stream,
+                _selectedFile.Name,
+                _uploadTitle,
+                kind: null);
+
+            ClearUpload();
+            _showUpload = false;
+            await LoadAsync();
+
+            SetMessage(
+                result.WasDuplicate
+                    ? "این محتوا از قبل موجود بود؛ به‌عنوان نسخه جدید ثبت و پردازش شد."
+                    : "منبع بارگذاری شد و پردازش آن در صف قرار گرفت.",
+                isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"بارگذاری ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CreateNoteAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await SourceApi.CreateNoteSourceAsync(workspaceId, _noteTitle!, _noteBody!);
+            _noteTitle = null;
+            _noteBody = null;
+            _showUpload = false;
+            await LoadAsync();
+            SetMessage("یادداشت ثبت شد و پردازش آن در صف قرار گرفت.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت یادداشت ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReprocessAsync(SourceListItem source)
+    {
+        _busy = true;
+        try
+        {
+            await SourceApi.ReprocessAsync(source.Id);
+            await LoadAsync();
+            SetMessage("پردازش مجدد در صف قرار گرفت.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"پردازش مجدد ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleArchiveAsync(SourceListItem source)
+    {
+        _busy = true;
+        try
+        {
+            await SourceApi.SetArchivedAsync(source.Id, !source.IsArchived);
+            await LoadAsync();
+            SetMessage(source.IsArchived ? "منبع بازگردانی شد." : "منبع بایگانی شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تغییر وضعیت ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

@@ -1,0 +1,484 @@
+@page "/claims"
+@rendermode InteractiveServer
+@inject ClaimsService ClaimsApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>ادعاها — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">⚖</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">ادعاها همیشه به یک فضای کاری تعلق دارند.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">ادعاها و شواهد</h1>
+                <div class="text-sm text-secondary" style="margin-top: 4px;">
+                    وضعیت هر ادعا فقط با بازبینی انسانی تغییر می‌کند. هیچ ادعایی خودکار «تأییدشده» نمی‌شود.
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" @onclick="() => _showCreate = !_showCreate">
+                @(_showCreate ? "بستن" : "ادعای جدید")
+            </button>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_showCreate)
+        {
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">ثبت ادعای دستی</div>
+                    <div class="card-subtitle">ادعای دستی با وضعیت «بررسی‌نشده» و شناخت «فرضیه» ثبت می‌شود.</div>
+                </div>
+                <div class="stack">
+                    <div class="field">
+                        <label class="field-label">متن ادعا</label>
+                        <textarea class="textarea" rows="2" @bind="_newStatement" @bind:event="oninput"></textarea>
+                    </div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label class="field-label">نوع ادعا</label>
+                            <select class="select" @bind="_newClaimType">
+                                @foreach (var t in Enum.GetValues<ClaimType>())
+                                {
+                                    <option value="@t">@Labels.ClaimTypeLabel(t)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">بافت زمانی (اختیاری)</label>
+                            <input class="input" @bind="_newTemporalContext" placeholder="مثلاً: ۱۴۰۴" />
+                        </div>
+                    </div>
+                    <button class="btn btn-primary"
+                            disabled="@(string.IsNullOrWhiteSpace(_newStatement) || _busy)"
+                            @onclick="CreateClaimAsync">
+                        ثبت ادعا
+                    </button>
+                </div>
+            </section>
+        }
+
+        @if (_overview is null)
+        {
+            <div class="skeleton" style="height: 220px;"></div>
+        }
+        else
+        {
+            <div class="metric-grid">
+                <div class="metric" style="--metric-accent: var(--accent-cyan);">
+                    <div class="metric-label">کل ادعاها</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.Total)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-amber);">
+                    <div class="metric-label">بررسی‌نشده</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.Unreviewed)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-emerald);">
+                    <div class="metric-label">پشتیبانی‌شده</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.Supported)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-violet);">
+                    <div class="metric-label">مورد مناقشه</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.Contested)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-crimson);">
+                    <div class="metric-label">رد‌شده</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.Contradicted)</div>
+                </div>
+                <div class="metric" style="--metric-accent: var(--accent-crimson);">
+                    <div class="metric-label">تناقض‌های باز</div>
+                    <div class="metric-value">@JalaliDate.ToPersianDigits(_overview.Counts.OpenConflicts)</div>
+                </div>
+            </div>
+
+            <div class="row-wrap">
+                <button class="btn btn-sm @(_statusFilter is null ? "btn-primary" : "btn-ghost")"
+                        @onclick="() => SetFilterAsync(null)">
+                    همه
+                </button>
+                @foreach (var s in Enum.GetValues<ClaimStatus>())
+                {
+                    <button class="btn btn-sm @(_statusFilter == s ? "btn-primary" : "btn-ghost")"
+                            @onclick="() => SetFilterAsync(s)">
+                        @Labels.ClaimStatusLabel(s)
+                    </button>
+                }
+            </div>
+
+            <div class="split">
+                <div class="split-main">
+                    <section class="card flush">
+                        <div class="card-header" style="padding: var(--space-4);">
+                            <div class="card-title">فهرست ادعاها</div>
+                            <div class="spacer"></div>
+                            <div class="text-xs text-muted">@JalaliDate.ToPersianDigits(_overview.Claims.Count) مورد</div>
+                        </div>
+
+                        @if (_overview.Claims.Count == 0)
+                        {
+                            <div class="empty-state" style="padding: var(--space-8) var(--space-4);">
+                                <div class="empty-icon">⚖</div>
+                                <div class="empty-title">ادعایی یافت نشد</div>
+                                <div class="empty-text">
+                                    استخراج خودکار ادعا از متن پیاده‌سازی نشده است؛ ادعاها را دستی ثبت کنید.
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-wrap">
+                                <table class="data">
+                                    <thead>
+                                        <tr>
+                                            <th>ادعا</th>
+                                            <th>نوع</th>
+                                            <th>وضعیت</th>
+                                            <th>شناخت</th>
+                                            <th>شواهد</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var c in _overview.Claims)
+                                        {
+                                            <tr>
+                                                <td style="max-width: 420px;">
+                                                    <div class="truncate">@c.Statement</div>
+                                                    <div class="text-xs text-muted">
+                                                        @JalaliDate.FormatDate(c.CreatedAtUtc)
+                                                        @if (c.IsAiExtracted)
+                                                        {
+                                                            <span> · استخراج‌شده توسط هوش مصنوعی</span>
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td class="nowrap text-xs">@Labels.ClaimTypeLabel(c.ClaimType)</td>
+                                                <td class="nowrap">
+                                                    <span class="badge @Labels.ClaimStatusBadge(c.Status)">@Labels.ClaimStatusLabel(c.Status)</span>
+                                                </td>
+                                                <td class="nowrap">
+                                                    <span class="badge @Labels.EpistemicBadge(c.EpistemicStatus)">@Labels.Epistemic(c.EpistemicStatus)</span>
+                                                </td>
+                                                <td class="nowrap tabular text-xs">@JalaliDate.ToPersianDigits(c.EvidenceCount)</td>
+                                                <td class="nowrap">
+                                                    <button class="btn btn-ghost btn-sm" @onclick="() => SelectClaimAsync(c.Id)">
+                                                        بررسی
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </section>
+
+                    <section class="card">
+                        <div class="card-header">
+                            <div class="card-title">تناقض‌ها</div>
+                            <div class="card-subtitle">تناقض‌ها فقط با ثبت توضیح انسانی حل‌شده علامت می‌خورند.</div>
+                        </div>
+
+                        @if (_overview.Conflicts.Count == 0)
+                        {
+                            <div class="text-sm text-muted">تناقضی ثبت نشده است.</div>
+                        }
+                        else
+                        {
+                            <div class="stack-sm">
+                                @foreach (var conflict in _overview.Conflicts)
+                                {
+                                    <div class="panel">
+                                        <div class="row-between">
+                                            <div class="text-sm">@conflict.Explanation</div>
+                                            @if (conflict.IsResolved)
+                                            {
+                                                <span class="badge badge-emerald">حل‌شده</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge badge-crimson">باز</span>
+                                            }
+                                        </div>
+                                        <div class="text-xs text-muted" style="margin-top: 2px;">
+                                            @JalaliDate.FormatDateTime(conflict.CreatedAtUtc)
+                                        </div>
+                                        @if (conflict.IsResolved)
+                                        {
+                                            <div class="text-xs text-emerald" style="margin-top: var(--space-2);">
+                                                توضیح حل: @conflict.Resolution
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="row" style="margin-top: var(--space-3); gap: var(--space-2);">
+                                                <input class="input" @bind="_conflictResolution[conflict.Id]" @bind:event="oninput"
+                                                       placeholder="توضیح حل تناقض…" />
+                                                <button class="btn btn-primary btn-sm"
+                                                        disabled="@(string.IsNullOrWhiteSpace(GetResolution(conflict.Id)) || _busy)"
+                                                        @onclick="() => ResolveConflictAsync(conflict.Id)">
+                                                    ثبت حل
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+                </div>
+
+                <aside class="split-side">
+                    @if (_claim is null)
+                    {
+                        <div class="empty-state card">
+                            <div class="empty-icon">⚖</div>
+                            <div class="empty-title">ادعایی انتخاب نشده است</div>
+                            <div class="empty-text">برای بازبینی، یک ادعا را از فهرست انتخاب کنید.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stack">
+                            <section class="card">
+                                <div class="card-header">
+                                    <div class="card-title">بازبینی ادعا</div>
+                                </div>
+                                <div class="stack">
+                                    <div class="text-sm" style="line-height: 1.9;">@_claim.Statement</div>
+
+                                    <div class="row-wrap">
+                                        <span class="badge @Labels.ClaimStatusBadge(_claim.Status)">@Labels.ClaimStatusLabel(_claim.Status)</span>
+                                        <span class="badge @Labels.EpistemicBadge(_claim.EpistemicStatus)">@Labels.Epistemic(_claim.EpistemicStatus)</span>
+                                        <span class="badge badge-neutral">@Labels.ClaimTypeLabel(_claim.ClaimType)</span>
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(_claim.SourceTitle))
+                                    {
+                                        <div class="text-xs text-muted">
+                                            منبع: @_claim.SourceTitle
+                                            @if (_claim.PageNumber is int pn)
+                                            {
+                                                <span> · ص @JalaliDate.ToPersianDigits(pn)</span>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(_claim.SourceExcerpt))
+                                    {
+                                        <div class="passage">
+                                            <div class="passage-text">@_claim.SourceExcerpt</div>
+                                        </div>
+                                    }
+
+                                    <div class="field">
+                                        <label class="field-label">یادداشت بازبینی</label>
+                                        <textarea class="textarea" rows="2" @bind="_annotation"></textarea>
+                                    </div>
+
+                                    <div class="field">
+                                        <label class="field-label">تعیین وضعیت</label>
+                                        <div class="row-wrap">
+                                            @foreach (var s in Enum.GetValues<ClaimStatus>())
+                                            {
+                                                <button class="btn btn-sm @(_claim.Status == s ? "btn-primary" : "btn-ghost")"
+                                                        disabled="@_busy"
+                                                        @onclick="() => SetStatusAsync(s)">
+                                                    @Labels.ClaimStatusLabel(s)
+                                                </button>
+                                            }
+                                        </div>
+                                        <div class="field-hint">
+                                            تنها وضعیت «پشتیبانی‌شده» شناخت را به «تأییدشده» ارتقا می‌دهد.
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="card">
+                                <div class="card-header">
+                                    <div class="card-title">شواهد</div>
+                                    <div class="spacer"></div>
+                                    <div class="text-xs text-muted">@JalaliDate.ToPersianDigits(_claim.Evidence.Count)</div>
+                                </div>
+
+                                @if (_claim.Evidence.Count == 0)
+                                {
+                                    <div class="text-sm text-muted">شاهدی به این ادعا پیوست نشده است.</div>
+                                }
+                                else
+                                {
+                                    <div class="stack-sm">
+                                        @foreach (var e in _claim.Evidence)
+                                        {
+                                            <div class="panel">
+                                                <div class="row-between">
+                                                    <span class="badge @Labels.StanceBadge(e.Stance)">@Labels.StanceLabel(e.Stance)</span>
+                                                    <a class="text-xs text-cyan" href="/documents/@e.DocumentChunkId">ص @JalaliDate.ToPersianDigits(e.PageNumber)</a>
+                                                </div>
+                                                <div class="text-xs text-secondary" style="margin-top: var(--space-2);">@e.Excerpt</div>
+                                                @if (!string.IsNullOrWhiteSpace(e.Rationale))
+                                                {
+                                                    <div class="text-xs text-muted" style="margin-top: 2px;">@e.Rationale</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </section>
+                        </div>
+                    }
+                </aside>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private ClaimsOverview? _overview;
+    private ClaimDetail? _claim;
+    private ClaimStatus? _statusFilter;
+    private bool _showCreate;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string? _newStatement;
+    private ClaimType _newClaimType = ClaimType.Factual;
+    private string? _newTemporalContext;
+
+    private string? _annotation;
+    private readonly Dictionary<Guid, string?> _conflictResolution = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _overview = null;
+            return;
+        }
+
+        _overview = await ClaimsApi.GetOverviewAsync(workspaceId, _statusFilter);
+    }
+
+    private async Task SetFilterAsync(ClaimStatus? status)
+    {
+        _statusFilter = status;
+        await LoadAsync();
+    }
+
+    private async Task SelectClaimAsync(Guid claimId)
+    {
+        _claim = await ClaimsApi.GetAsync(claimId);
+        _annotation = _claim?.UserAnnotation;
+    }
+
+    private async Task CreateClaimAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var id = await ClaimsApi.CreateAsync(workspaceId, _newStatement!, _newClaimType, _newTemporalContext);
+            _newStatement = null;
+            _newTemporalContext = null;
+            await LoadAsync();
+            await SelectClaimAsync(id);
+            SetMessage("ادعا ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت ادعا ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetStatusAsync(ClaimStatus status)
+    {
+        if (_claim is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ClaimsApi.SetStatusAsync(_claim.Id, status, _annotation);
+            await LoadAsync();
+            await SelectClaimAsync(_claim.Id);
+            SetMessage("وضعیت ادعا به‌روزرسانی شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"به‌روزرسانی ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string? GetResolution(Guid conflictId)
+        => _conflictResolution.TryGetValue(conflictId, out var value) ? value : null;
+
+    private async Task ResolveConflictAsync(Guid conflictId)
+    {
+        var resolution = GetResolution(conflictId);
+        if (string.IsNullOrWhiteSpace(resolution))
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ClaimsApi.ResolveConflictAsync(conflictId, resolution);
+            _conflictResolution.Remove(conflictId);
+            await LoadAsync();
+            SetMessage("تناقض حل‌شده علامت خورد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت حل تناقض ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

@@ -1,0 +1,48 @@
+﻿@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>خطا — رصدخانه دانش</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>خطایی رخ داد</h1>
+        <p class="page-subtitle">پردازش این درخواست کامل نشد. جزئیات فنی در ادامه آمده است.</p>
+    </div>
+</div>
+
+<section class="card">
+    @if (ShowRequestId)
+    {
+        <div class="field">
+            <div class="field-label">شناسه درخواست</div>
+            <code class="text-xs">@RequestId</code>
+        </div>
+    }
+
+    <div class="alert alert-warning" style="margin-block-start: var(--space-4);">
+        <div>
+            <strong>حالت توسعه</strong>
+            <div class="text-sm">
+                اگر متغیر محیطی <code>ASPNETCORE_ENVIRONMENT</code> روی <code>Development</code> تنظیم شود،
+                جزئیات کامل خطا نمایش داده می‌شود. این حالت را روی محیط عملیاتی فعال نکنید،
+                زیرا ممکن است اطلاعات حساس از استثناها به کاربر نشان داده شود.
+            </div>
+        </div>
+    </div>
+
+    <div class="row-wrap" style="margin-block-start: var(--space-4);">
+        <a class="btn btn-primary" href="/">بازگشت به مرکز فرمان</a>
+        <a class="btn btn-ghost" href="/monitor">پایش پردازش</a>
+    </div>
+</section>
+
+@code{
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

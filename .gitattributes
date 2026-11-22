@@ -1,0 +1,36 @@
+# Normalize line endings so the repository is stable across platforms.
+# Text files are stored with LF in the repository and checked out with the
+# platform default. Binary assets are never converted.
+
+* text=auto
+
+*.cs      text diff=csharp
+*.razor   text
+*.cshtml  text
+*.csproj  text
+*.sln     text eol=crlf
+*.json    text
+*.md      text
+*.yml     text
+*.yaml    text
+*.ps1     text
+*.css     text
+*.js      text
+*.config  text
+*.xml     text
+
+# Vendored third-party assets: keep byte-identical, never normalize.
+src/PersonalResearchLab.Web/wwwroot/lib/** -text
+
+# Binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.woff    binary
+*.woff2   binary
+*.ttf     binary
+*.bin     binary
+*.dll     binary
+*.pdb     binary

@@ -1,0 +1,267 @@
+﻿@page "/companion"
+@rendermode InteractiveServer
+@inject ResearchCompanionService CompanionApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>همراه پژوهش — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">✦</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">همراه پژوهش فقط از منابع فضای فعال پاسخ می‌سازد.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="split" style="height: calc(100vh - var(--topbar-height) - 2 * var(--space-6));">
+
+        <aside class="split-side">
+            <div class="card tight" style="height: 100%; display: flex; flex-direction: column;">
+                <div class="row-between" style="margin-bottom: var(--space-3);">
+                    <div class="card-title">گفت‌وگوها</div>
+                    <button class="btn btn-ghost btn-sm" @onclick="NewConversation">جدید</button>
+                </div>
+
+                @if (_conversations is null)
+                {
+                    <div class="skeleton" style="height: 80px;"></div>
+                }
+                else if (_conversations.Count == 0)
+                {
+                    <div class="text-sm text-muted">هنوز گفت‌وگویی ثبت نشده است.</div>
+                }
+                else
+                {
+                    <div class="stack-sm" style="overflow-y: auto;">
+                        @foreach (var c in _conversations)
+                        {
+                            <button class="btn btn-ghost btn-sm"
+                                    style="display:block; width:100%; text-align:start; @(c.Id == _conversationId ? "background: var(--surface-3);" : "")"
+                                    @onclick="() => OpenConversationAsync(c.Id)">
+                                <div class="truncate">@c.Title</div>
+                                <div class="text-xs text-muted">
+                                    @JalaliDate.ToPersianDigits(c.MessageCount) پیام · @JalaliDate.FormatRelative(c.UpdatedAtUtc)
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </aside>
+
+        <div class="split-main" style="display: flex; flex-direction: column; min-height: 0;">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                <div class="card-header">
+                    <div class="card-title">همراه پژوهش</div>
+                    <div class="card-subtitle">
+                        پاسخ‌ها فقط بر پایه قطعه‌های بازیابی‌شده از منابع شما ساخته می‌شوند و ارجاع دارند.
+                    </div>
+                </div>
+
+                <div class="chat-scroll" style="flex: 1; overflow-y: auto;">
+                    @if (_messages.Count == 0)
+                    {
+                        <div class="empty-state">
+                            <div class="empty-icon">✦</div>
+                            <div class="empty-title">پرسشی بپرسید</div>
+                            <div class="empty-text">
+                                اگر شواهد کافی در منابع شما نباشد، پاسخ صریحاً «شواهد ناکافی» اعلام می‌شود و
+                                هیچ محتوایی از خود ساخته نمی‌شود.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var m in _messages)
+                        {
+                            <div class="msg @(m.Role == "user" ? "msg-user" : (m.IsInsufficientEvidence ? "msg-insufficient" : "msg-assistant"))">
+                                <div class="msg-meta">
+                                    <span>@(m.Role == "user" ? "شما" : "همراه")</span>
+                                    <span>·</span>
+                                    <span>@JalaliDate.FormatDateTime(m.CreatedAtUtc)</span>
+                                    @if (!string.IsNullOrWhiteSpace(m.ModelName))
+                                    {
+                                        <span>·</span>
+                                        <span>@m.ModelName</span>
+                                    }
+                                </div>
+                                <div style="white-space: pre-wrap;">@m.Content</div>
+
+                                @{
+                                    var citations = ParseCitations(m.CitationsJson);
+                                }
+                                @if (citations.Count > 0)
+                                {
+                                    <div class="row-wrap" style="margin-top: var(--space-3);">
+                                        @foreach (var c in citations)
+                                        {
+                                            <a class="citation" href="/documents/@c.DocumentId">
+                                                @c.SourceTitle
+                                                @if (c.PageNumber > 0)
+                                                {
+                                                    <span> · ص @JalaliDate.ToPersianDigits(c.PageNumber)</span>
+                                                }
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+
+                    @if (_busy)
+                    {
+                        <div class="msg msg-assistant">
+                            <div class="msg-meta">همراه</div>
+                            <div class="row" style="gap: var(--space-2);">
+                                <span class="dot dot-pulse"></span>
+                                <span class="text-sm text-muted">در حال بازیابی شواهد و ساخت پاسخ…</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (_error is not null)
+                {
+                    <div class="notice notice-danger" style="margin-top: var(--space-3);">
+                        <span class="notice-icon">✕</span>
+                        <div>@_error</div>
+                    </div>
+                }
+
+                <div class="chat-composer">
+                    <textarea class="textarea" rows="2" @bind="_question" @bind:event="oninput"
+                              placeholder="پرسش خود را بنویسید…"
+                              @onkeydown="OnKeyDown"></textarea>
+                    <button class="btn btn-primary"
+                            disabled="@(string.IsNullOrWhiteSpace(_question) || _busy)"
+                            @onclick="AskAsync">
+                        ارسال
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ConversationSummary>? _conversations;
+    private List<ConversationMessage> _messages = new();
+    private Guid? _conversationId;
+    private string _question = string.Empty;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadConversationsAsync();
+    }
+
+    private async Task LoadConversationsAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _conversations = Array.Empty<ConversationSummary>();
+            return;
+        }
+
+        _conversations = await CompanionApi.ListConversationsAsync(workspaceId);
+    }
+
+    private void NewConversation()
+    {
+        _conversationId = null;
+        _messages = new List<ConversationMessage>();
+        _error = null;
+    }
+
+    private async Task OpenConversationAsync(Guid conversationId)
+    {
+        _conversationId = conversationId;
+        _error = null;
+        _messages = (await CompanionApi.GetMessagesAsync(conversationId)).ToList();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !args.ShiftKey && !string.IsNullOrWhiteSpace(_question))
+        {
+            await AskAsync();
+        }
+    }
+
+    private async Task AskAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId || string.IsNullOrWhiteSpace(_question))
+        {
+            return;
+        }
+
+        var question = _question.Trim();
+        _question = string.Empty;
+        _busy = true;
+        _error = null;
+
+        // Show the user's turn immediately; the persisted copy arrives with the reload.
+        _messages.Add(new ConversationMessage(
+            Guid.NewGuid(), "user", question, null, false, null, DateTime.UtcNow));
+
+        try
+        {
+            var answer = await CompanionApi.AskAsync(workspaceId, question, _conversationId);
+
+            if (answer.ConversationId is not null)
+            {
+                _conversationId = answer.ConversationId;
+                _messages = (await CompanionApi.GetMessagesAsync(answer.ConversationId.Value)).ToList();
+            }
+            else
+            {
+                _messages.Add(new ConversationMessage(
+                    Guid.NewGuid(),
+                    "assistant",
+                    answer.Content,
+                    null,
+                    !answer.Success,
+                    answer.ProviderDescription,
+                    DateTime.UtcNow));
+            }
+
+            if (!answer.Success && !string.IsNullOrWhiteSpace(answer.Error))
+            {
+                _error = answer.Error;
+            }
+
+            await LoadConversationsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"درخواست ناموفق بود: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static IReadOnlyList<Citation> ParseCitations(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return Array.Empty<Citation>();
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<Citation>>(json) ?? new List<Citation>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<Citation>();
+        }
+    }
+}

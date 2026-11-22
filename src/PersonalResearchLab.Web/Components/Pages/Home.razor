@@ -1,0 +1,247 @@
+@page "/"
+@rendermode InteractiveServer
+@inject DashboardService Dashboard
+@inject WorkspaceContext WorkspaceContext
+@inject NavigationManager Nav
+
+<PageTitle>مرکز فرمان — رصدخانه دانش</PageTitle>
+
+@if (_snapshot is null)
+{
+    <div class="stack">
+        <div class="skeleton" style="height: 96px;"></div>
+        <div class="skeleton" style="height: 220px;"></div>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        @if (_snapshot.Metrics.WorkspaceCount == 0)
+        {
+            <div class="notice notice-info">
+                <span class="notice-icon">◈</span>
+                <div>
+                    <div class="text-bold">هنوز فضای کاری‌ای وجود ندارد.</div>
+                    <div class="text-sm text-secondary">
+                        هر منبع، جست‌وجو و گفت‌وگو درون یک فضای کاری قرار می‌گیرد. برای شروع، یک فضای کاری بسازید.
+                    </div>
+                    <div style="margin-top: var(--space-3);">
+                        <a class="btn btn-primary btn-sm" href="/workspaces">ساخت فضای کاری</a>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <section>
+            <div class="card-header">
+                <div class="card-title">سنجه‌های زنده</div>
+                <div class="card-subtitle">هر عدد یک شمارش مستقیم روی داده‌های واقعی است.</div>
+            </div>
+            <div class="metric-grid">
+                @foreach (var m in Metrics)
+                {
+                    <div class="metric" style="--metric-accent: @m.Accent;">
+                        <div class="metric-label">@m.Label</div>
+                        <div class="metric-value">@JalaliDate.ToPersianDigits(m.Value)</div>
+                        <div class="metric-hint">@m.Hint</div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <div class="grid-2">
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">فضاهای کاری</div>
+                    <div class="spacer"></div>
+                    <a class="btn btn-ghost btn-sm" href="/workspaces">همه</a>
+                </div>
+
+                @if (_snapshot.Workspaces.Count == 0)
+                {
+                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                        <div class="empty-icon">▤</div>
+                        <div class="empty-text">فضای کاری‌ای ثبت نشده است.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack-sm">
+                        @foreach (var w in _snapshot.Workspaces)
+                        {
+                            <a href="/workspaces/@w.Id" class="panel"
+                               style="display:block; text-decoration:none; color:inherit; border-inline-start: 3px solid @w.AccentColor;">
+                                <div class="row-between">
+                                    <div class="text-bold">@w.Name</div>
+                                    <div class="text-xs text-muted">@JalaliDate.FormatRelative(w.UpdatedAtUtc)</div>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(w.Objective))
+                                {
+                                    <div class="text-sm text-secondary truncate" style="margin-top: 2px;">@w.Objective</div>
+                                }
+                                <div class="row-wrap text-xs text-muted" style="margin-top: var(--space-2);">
+                                    <span>@JalaliDate.ToPersianDigits(w.SourceCount) منبع</span>
+                                    <span>·</span>
+                                    <span>@JalaliDate.ToPersianDigits(w.ClaimCount) ادعا</span>
+                                    <span>·</span>
+                                    <span>@JalaliDate.ToPersianDigits(w.NodeCount) گره</span>
+                                    <span>·</span>
+                                    <span>@JalaliDate.ToPersianDigits(w.RunCount) پژوهش</span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">پردازش‌های اخیر</div>
+                    <div class="spacer"></div>
+                    <a class="btn btn-ghost btn-sm" href="/monitor">پایش</a>
+                </div>
+
+                @if (_snapshot.RecentJobs.Count == 0)
+                {
+                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                        <div class="empty-icon">◔</div>
+                        <div class="empty-text">هیچ پردازشی اجرا نشده است.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack-sm">
+                        @foreach (var job in _snapshot.RecentJobs)
+                        {
+                            <a href="/monitor/@job.Id" class="panel" style="display:block; text-decoration:none; color:inherit;">
+                                <div class="row-between">
+                                    <div class="text-sm truncate">@LegacyText.JobTitle(job.Title)</div>
+                                    <span class="badge @Labels.StatusBadge(job.Status)">
+                                        <span class="dot @(job.Status == ProcessingStatus.Running ? "dot-pulse" : "")"></span>
+                                        @Labels.StatusLabel(job.Status)
+                                    </span>
+                                </div>
+                                <div class="progress" style="margin-top: var(--space-2);">
+                                    <div class="progress-bar @(job.Status == ProcessingStatus.Running ? "indeterminate" : "")"
+                                         style="width: @(job.ProgressPercent)%"></div>
+                                </div>
+                                <div class="row-between text-xs text-muted" style="margin-top: 4px;">
+                                    <span>@LegacyText.CurrentStage(job.CurrentStage)</span>
+                                    <span>@JalaliDate.ToPersianDigits(job.ProgressPercent)٪</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(job.FailureReason))
+                                {
+                                    <div class="text-xs text-crimson" style="margin-top: 4px;">@job.FailureReason</div>
+                                }
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+
+        <div class="grid-2">
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">پرسش‌های باز</div>
+                    <div class="spacer"></div>
+                    <a class="btn btn-ghost btn-sm" href="/research">پژوهش</a>
+                </div>
+
+                @if (_snapshot.OpenQuestions.Count == 0)
+                {
+                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                        <div class="empty-icon">؟</div>
+                        <div class="empty-text">پرسش بی‌پاسخی ثبت نشده است.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack-sm">
+                        @foreach (var q in _snapshot.OpenQuestions)
+                        {
+                            <div class="panel">
+                                <div class="text-sm">@q.Text</div>
+                                @if (q.IsAiGenerated)
+                                {
+                                    <span class="badge badge-violet" style="margin-top: var(--space-2);">پیشنهاد هوش مصنوعی</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">آخرین رویدادها</div>
+                    <div class="spacer"></div>
+                    <a class="btn btn-ghost btn-sm" href="/timeline">خط زمان</a>
+                </div>
+
+                @if (_snapshot.RecentEvents.Count == 0)
+                {
+                    <div class="empty-state" style="padding: var(--space-6) 0;">
+                        <div class="empty-icon">≡</div>
+                        <div class="empty-text">رویدادی ثبت نشده است.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="timeline">
+                        @foreach (var e in _snapshot.RecentEvents)
+                        {
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-title">@LegacyText.TimelineTitle(e.Title)</div>
+                                <div class="timeline-time">@JalaliDate.FormatRelative(e.CreatedAtUtc)</div>
+                                @if (!string.IsNullOrWhiteSpace(e.Detail))
+                                {
+                                    <div class="timeline-detail">@LegacyText.TimelineDetail(e.Detail)</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    private DashboardSnapshot? _snapshot;
+
+    private sealed record MetricTile(string Label, int Value, string Hint, string Accent);
+
+    private IReadOnlyList<MetricTile> Metrics => _snapshot is null
+        ? Array.Empty<MetricTile>()
+        : new[]
+        {
+            new MetricTile("فضاهای کاری", _snapshot.Metrics.WorkspaceCount, "فضاهای فعال", "var(--accent-cyan)"),
+            new MetricTile("منابع", _snapshot.Metrics.SourceCount, "منبع بایگانی‌نشده", "var(--accent-blue)"),
+            new MetricTile("اسناد", _snapshot.Metrics.DocumentCount, "سند استخراج‌شده", "var(--accent-blue)"),
+            new MetricTile("قطعه‌های متن", _snapshot.Metrics.ChunkCount, "قطعه قابل بازیابی", "var(--accent-violet)"),
+            new MetricTile("قطعه‌های تعبیه‌شده", _snapshot.Metrics.EmbeddedChunkCount,
+                _snapshot.Metrics.ChunkCount == 0
+                    ? "بدون داده"
+                    : $"{JalaliDate.ToPersianDigits(_snapshot.Metrics.EmbeddedChunkCount * 100 / _snapshot.Metrics.ChunkCount)}٪ پوشش برداری",
+                "var(--accent-violet)"),
+            new MetricTile("ادعاها", _snapshot.Metrics.ClaimCount, "ادعای ثبت‌شده", "var(--accent-cyan)"),
+            new MetricTile("بررسی‌نشده", _snapshot.Metrics.UnreviewedClaimCount, "نیازمند داوری شما", "var(--accent-amber)"),
+            new MetricTile("مورد مناقشه", _snapshot.Metrics.ContestedClaimCount, "ادعای متنازع یا رد‌شده", "var(--accent-crimson)"),
+            new MetricTile("گره‌های دانش", _snapshot.Metrics.NodeCount, "مفهوم، شخص، فناوری", "var(--accent-violet)"),
+            new MetricTile("رابطه‌ها", _snapshot.Metrics.RelationshipCount, "یال گراف دانش", "var(--accent-violet)"),
+            new MetricTile("تناقض‌های باز", _snapshot.Metrics.OpenConflictCount, "حل‌نشده", "var(--accent-crimson)"),
+            new MetricTile("پردازش فعال", _snapshot.Metrics.ActiveJobCount, "در انتظار یا در حال اجرا", "var(--accent-cyan)"),
+            new MetricTile("پردازش ناموفق", _snapshot.Metrics.FailedJobCount, "نیازمند بررسی", "var(--accent-crimson)"),
+            new MetricTile("پژوهش فعال", _snapshot.Metrics.ActiveRunCount, "در حال اجرا یا در انتظار تأیید", "var(--accent-amber)"),
+            new MetricTile("گزارش‌ها", _snapshot.Metrics.ReportCount, "گزارش تولیدشده", "var(--accent-emerald)")
+        };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        _snapshot = await Dashboard.GetSnapshotAsync();
+    }
+}

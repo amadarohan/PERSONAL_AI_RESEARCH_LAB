@@ -1,0 +1,538 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject SettingsService SettingsApi
+@inject IConfiguration Configuration
+@inject IHostEnvironment Environment
+
+<PageTitle>تنظیمات — رصدخانه دانش</PageTitle>
+
+<div class="stack-lg">
+
+    <div>
+        <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">تنظیمات</h1>
+        <div class="text-sm text-secondary" style="margin-top: 4px;">
+            ارائه‌دهندگان هوش مصنوعی، مدل‌ها و سیاست مسیریابی داده. کلیدها هرگز در پایگاه داده ذخیره نمی‌شوند.
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+            <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+            <div>@_message</div>
+        </div>
+    }
+
+    <section class="card">
+        <div class="card-header">
+            <div class="card-title">سیاست مسیریابی داده</div>
+            <div class="card-subtitle">این قاعده در یک نقطه تصمیم‌گیری می‌شود و قابل دور زدن نیست.</div>
+        </div>
+        <div class="stack-sm">
+            <div class="panel">
+                <div class="text-sm">
+                    فضای کاری <span class="badge badge-emerald">فقط محلی</span> هرگز به ارائه‌دهنده
+                    <span class="badge badge-amber">ابر مجاز</span> فرستاده نمی‌شود؛ حتی اگر آن ارائه‌دهنده
+                    پیش‌فرض باشد، رد می‌شود.
+                </div>
+            </div>
+            <div class="panel">
+                <div class="text-sm">
+                    اگر هیچ ارائه‌دهنده‌ای با سیاست فضای کاری سازگار نباشد، نتیجه <span class="text-amber">null</span>
+                    است و سرویس با پیام صریح شکست می‌خورد؛ هیچ فراخوانی ابری جایگزین انجام نمی‌شود.
+                </div>
+            </div>
+            <div class="panel">
+                <div class="text-sm">
+                    بازرتبه‌بندی (reranking) در این نسخه <span class="text-crimson">پیاده‌سازی نشده است</span>؛
+                    بازیابی به امتیاز ترکیبی واژگانی و برداری تکیه می‌کند.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <div class="card-title">وضعیت محیط اجرا</div>
+        </div>
+        <div class="table-wrap">
+            <table class="data">
+                <tbody>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">محیط</td>
+                        <td class="text-sm">@Environment.EnvironmentName</td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">ریشه محتوا</td>
+                        <td class="text-sm" style="word-break: break-all;">@Environment.ContentRootPath</td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">مسیر فایل‌ها</td>
+                        <td class="text-sm" style="word-break: break-all;">@(Configuration["Storage:RootPath"] ?? "storage/files")</td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">حداکثر حجم فایل</td>
+                        <td class="text-sm">@JalaliDate.FormatBytes(Configuration.GetValue<long?>("Storage:MaxFileSizeBytes") ?? 104_857_600)</td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">فایل مخزن کلیدها</td>
+                        <td class="text-sm" style="word-break: break-all;">@(Configuration["Secrets:FilePath"] ?? "storage/secrets/secrets.bin")</td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">رمزنگاری کلیدها</td>
+                        <td class="text-sm">
+                            @if (OperatingSystem.IsWindows())
+                            {
+                                <span class="badge badge-emerald">DPAPI (کاربر جاری)</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-amber">بدون رمزنگاری — DPAPI فقط روی ویندوز</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-xs text-muted nowrap">منطقه زمانی نمایش</td>
+                        <td class="text-sm">Asia/Tehran — ذخیره‌سازی همیشه UTC است</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="row-between">
+        <div class="card-title">ارائه‌دهندگان هوش مصنوعی</div>
+        <button class="btn btn-primary btn-sm" @onclick="() => _showProviderForm = !_showProviderForm">
+            @(_showProviderForm ? "بستن" : "ارائه‌دهنده جدید")
+        </button>
+    </div>
+
+    @if (_showProviderForm)
+    {
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">ارائه‌دهنده جدید</div>
+                <div class="card-subtitle">
+                    کلید API فقط در مخزن محلی رمزنگاری‌شده ذخیره می‌شود؛ در پایگاه داده تنها نام آن باقی می‌ماند.
+                </div>
+            </div>
+            <div class="stack">
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label">نام</label>
+                        <input class="input" @bind="_providerName" @bind:event="oninput" placeholder="مثلاً: Ollama محلی" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label">نوع</label>
+                        <select class="select" @bind="_providerKind">
+                            @foreach (var kind in Enum.GetValues<AiProviderKind>())
+                            {
+                                <option value="@kind">@Labels.ProviderKindLabel(kind)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label">آدرس پایه</label>
+                    <input class="input" @bind="_providerBaseUrl" placeholder="http://localhost:11434/" />
+                    <div class="field-hint">برای Ollama معمولاً http://localhost:11434/ و برای سازگار با OpenAI مسیر /v1/.</div>
+                </div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label">مسیر داده</label>
+                        <select class="select" @bind="_providerDataRoute">
+                            <option value="@DataRoute.LocalOnly">فقط محلی</option>
+                            <option value="@DataRoute.CloudAllowed">ابر مجاز</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label">کلید API (اختیاری)</label>
+                        <input class="input" type="password" @bind="_providerApiKey" placeholder="YOUR_API_KEY" />
+                        <div class="field-hint">برای ارائه‌دهنده محلی خالی بگذارید.</div>
+                    </div>
+                </div>
+                <button class="btn btn-primary"
+                        disabled="@(string.IsNullOrWhiteSpace(_providerName) || _busy)"
+                        @onclick="CreateProviderAsync">
+                    ثبت ارائه‌دهنده
+                </button>
+            </div>
+        </section>
+    }
+
+    @if (_overview is null)
+    {
+        <div class="skeleton" style="height: 220px;"></div>
+    }
+    else if (_overview.Providers.Count == 0)
+    {
+        <div class="empty-state card">
+            <div class="empty-icon">⚙</div>
+            <div class="empty-title">ارائه‌دهنده‌ای تنظیم نشده است</div>
+            <div class="empty-text">
+                بدون ارائه‌دهنده، همراه پژوهش و تعبیه‌سازی صریحاً اعلام می‌کنند که پیکربندی ناقص است.
+                برای کار کامل بدون اینترنت، نوع «قطعی (آفلاین)» را انتخاب کنید.
+            </div>
+        </div>
+    }
+    else
+    {
+        <section class="card flush">
+            <div class="table-wrap">
+                <table class="data">
+                    <thead>
+                        <tr>
+                            <th>نام</th>
+                            <th>نوع</th>
+                            <th>مسیر داده</th>
+                            <th>کلید</th>
+                            <th>وضعیت</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _overview.Providers)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="text-sm">@p.Name</div>
+                                    <div class="text-xs text-muted" style="word-break: break-all;">@p.BaseUrl</div>
+                                </td>
+                                <td class="nowrap text-xs">@Labels.ProviderKindLabel(p.Kind)</td>
+                                <td class="nowrap">
+                                    <span class="badge @Labels.DataRouteBadge(p.DataRoute)">@Labels.DataRouteLabel(p.DataRoute)</span>
+                                </td>
+                                <td class="nowrap text-xs">
+                                    @if (p.HasSecret)
+                                    {
+                                        <span class="badge badge-emerald">موجود</span>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(p.ApiKeySecretName))
+                                    {
+                                        <span class="badge badge-crimson">ناموجود</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+                                <td class="nowrap">
+                                    @if (p.IsEnabled)
+                                    {
+                                        <span class="badge badge-emerald">فعال</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-neutral">غیرفعال</span>
+                                    }
+                                </td>
+                                <td class="nowrap">
+                                    <div class="row" style="gap: var(--space-1);">
+                                        <button class="btn btn-ghost btn-sm" disabled="@_busy"
+                                                @onclick="() => ToggleProviderAsync(p.Id, !p.IsEnabled)">
+                                            @(p.IsEnabled ? "غیرفعال" : "فعال")
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" disabled="@_busy"
+                                                @onclick="() => DeleteProviderAsync(p.Id, p.Name)">
+                                            حذف
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <div class="row-between">
+            <div class="card-title">مدل‌ها</div>
+            <button class="btn btn-primary btn-sm" @onclick="() => _showModelForm = !_showModelForm">
+                @(_showModelForm ? "بستن" : "مدل جدید")
+            </button>
+        </div>
+
+        @if (_showModelForm)
+        {
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">مدل جدید</div>
+                    <div class="card-subtitle">برای هر قابلیت، مدل پیش‌فرض تعیین کنید.</div>
+                </div>
+                <div class="stack">
+                    <div class="grid-2">
+                        <div class="field">
+                            <label class="field-label">ارائه‌دهنده</label>
+                            <select class="select" @bind="_modelProviderId">
+                                @foreach (var p in _overview.Providers)
+                                {
+                                    <option value="@p.Id">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">قابلیت</label>
+                            <select class="select" @bind="_modelCapability">
+                                @foreach (var c in Enum.GetValues<AiCapability>())
+                                {
+                                    <option value="@c">@Labels.CapabilityLabel(c)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label class="field-label">نام مدل</label>
+                            <input class="input" @bind="_modelName" @bind:event="oninput" placeholder="مثلاً: llama3.1:8b" />
+                        </div>
+                        <div class="field">
+                            <label class="field-label">ابعاد بردار (فقط تعبیه‌سازی)</label>
+                            <input class="input" type="number" min="1" @bind="_modelDimensions" />
+                        </div>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" @bind="_modelIsDefault" />
+                        <span class="text-sm">مدل پیش‌فرض این قابلیت باشد</span>
+                    </label>
+                    <button class="btn btn-primary"
+                            disabled="@(string.IsNullOrWhiteSpace(_modelName) || _modelProviderId == Guid.Empty || _busy)"
+                            @onclick="CreateModelAsync">
+                        ثبت مدل
+                    </button>
+                </div>
+            </section>
+        }
+
+        @if (_overview.Models.Count == 0)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">⚙</div>
+                <div class="empty-title">مدلی تنظیم نشده است</div>
+                <div class="empty-text">بدون مدل، هیچ قابلیتی قابل استفاده نیست.</div>
+            </div>
+        }
+        else
+        {
+            <section class="card flush">
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                            <tr>
+                                <th>ارائه‌دهنده</th>
+                                <th>قابلیت</th>
+                                <th>مدل</th>
+                                <th>ابعاد</th>
+                                <th>پیش‌فرض</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _overview.Models)
+                            {
+                                <tr>
+                                    <td class="text-sm">@m.ProviderName</td>
+                                    <td class="nowrap text-xs">@Labels.CapabilityLabel(m.Capability)</td>
+                                    <td class="text-sm">@m.ModelName</td>
+                                    <td class="nowrap tabular text-xs">@(m.Dimensions > 0 ? JalaliDate.ToPersianDigits(m.Dimensions) : "—")</td>
+                                    <td class="nowrap">
+                                        @if (m.IsDefault)
+                                        {
+                                            <span class="badge badge-cyan">پیش‌فرض</span>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-ghost btn-sm" disabled="@_busy"
+                                                    @onclick="() => SetDefaultModelAsync(m.Id)">
+                                                پیش‌فرض کن
+                                            </button>
+                                        }
+                                    </td>
+                                    <td class="nowrap">
+                                        <button class="btn btn-danger btn-sm" disabled="@_busy"
+                                                @onclick="() => DeleteModelAsync(m.Id)">
+                                            حذف
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private SettingsOverview? _overview;
+    private bool _showProviderForm;
+    private bool _showModelForm;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string? _providerName;
+    private AiProviderKind _providerKind = AiProviderKind.Ollama;
+    private string? _providerBaseUrl = "http://localhost:11434/";
+    private DataRoute _providerDataRoute = DataRoute.LocalOnly;
+    private string? _providerApiKey;
+
+    private Guid _modelProviderId;
+    private AiCapability _modelCapability = AiCapability.Chat;
+    private string? _modelName;
+    private int _modelDimensions = 1536;
+    private bool _modelIsDefault = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _overview = await SettingsApi.GetOverviewAsync();
+
+        if (_modelProviderId == Guid.Empty && _overview.Providers.Count > 0)
+        {
+            _modelProviderId = _overview.Providers[0].Id;
+        }
+    }
+
+    private async Task CreateProviderAsync()
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.CreateProviderAsync(
+                _providerName!,
+                _providerKind,
+                _providerBaseUrl ?? string.Empty,
+                _providerDataRoute,
+                null,
+                _providerApiKey);
+
+            _providerName = null;
+            _providerApiKey = null;
+            _showProviderForm = false;
+            await LoadAsync();
+            SetMessage("ارائه‌دهنده ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت ارائه‌دهنده ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleProviderAsync(Guid providerId, bool enabled)
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.SetProviderEnabledAsync(providerId, enabled);
+            await LoadAsync();
+            SetMessage(enabled ? "ارائه‌دهنده فعال شد." : "ارائه‌دهنده غیرفعال شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تغییر وضعیت ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteProviderAsync(Guid providerId, string name)
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.DeleteProviderAsync(providerId);
+            await LoadAsync();
+            SetMessage($"ارائه‌دهنده «{name}» و مدل‌های آن حذف شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"حذف ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CreateModelAsync()
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.CreateModelAsync(
+                _modelProviderId,
+                _modelCapability,
+                _modelName!,
+                _modelDimensions,
+                _modelIsDefault);
+
+            _modelName = null;
+            _showModelForm = false;
+            await LoadAsync();
+            SetMessage("مدل ثبت شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت مدل ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetDefaultModelAsync(Guid modelId)
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.SetDefaultModelAsync(modelId);
+            await LoadAsync();
+            SetMessage("مدل پیش‌فرض تغییر کرد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تغییر پیش‌فرض ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteModelAsync(Guid modelId)
+    {
+        _busy = true;
+        try
+        {
+            await SettingsApi.DeleteModelAsync(modelId);
+            await LoadAsync();
+            SetMessage("مدل حذف شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"حذف مدل ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

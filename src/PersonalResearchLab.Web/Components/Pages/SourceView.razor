@@ -1,0 +1,236 @@
+@page "/sources/{Id:guid}"
+@rendermode InteractiveServer
+@inject SourceService SourceApi
+@inject SearchService SearchApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>جزئیات منبع — رصدخانه دانش</PageTitle>
+
+@if (_source is null)
+{
+    <div class="skeleton" style="height: 240px;"></div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div class="row-between">
+            <div>
+                <div class="row" style="gap: var(--space-2);">
+                    <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">@_source.Title</h1>
+                    <span class="badge badge-neutral">@Labels.SourceKindLabel(_source.Kind)</span>
+                    <span class="badge @Labels.StatusBadge(_source.Status)">
+                        <span class="dot @(_source.Status == ProcessingStatus.Running ? "dot-pulse" : "")"></span>
+                        @Labels.StatusLabel(_source.Status)
+                    </span>
+                </div>
+                <div class="text-xs text-muted" style="margin-top: 4px;">
+                    افزوده‌شده @JalaliDate.FormatDateTime(_source.CreatedAtUtc)
+                </div>
+            </div>
+            <div class="row">
+                @if (_source.DocumentId is not null)
+                {
+                    <a class="btn btn-primary btn-sm" href="/documents/@_source.DocumentId">خواندن سند</a>
+                }
+                <a class="btn btn-ghost btn-sm" href="/sources">بازگشت</a>
+            </div>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_source.ProcessingError))
+        {
+            <div class="notice notice-danger">
+                <span class="notice-icon">!</span>
+                <div>
+                    <div class="text-bold">پردازش این منبع ناموفق بود.</div>
+                    <div class="text-sm">@_source.ProcessingError</div>
+                </div>
+            </div>
+        }
+
+        @if (_source.UsedOcr)
+        {
+            <div class="notice notice-warn">
+                <span class="notice-icon">◐</span>
+                <div>
+                    <div class="text-bold">متن این سند با تشخیص نوری نویسه استخراج شده است.</div>
+                    <div class="text-sm">دقت متن ممکن است کمتر از استخراج مستقیم باشد؛ ارجاع‌ها را در صورت حساس بودن بررسی کنید.</div>
+                </div>
+            </div>
+        }
+
+        <div class="grid-2">
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">فراداده</div>
+                </div>
+                <div class="stack-sm text-sm">
+                    <div class="row-between"><span class="text-muted">نام فایل اصلی</span><span>@(_source.OriginalFileName ?? "—")</span></div>
+                    <div class="row-between"><span class="text-muted">نویسنده</span><span>@(_source.Author ?? "—")</span></div>
+                    <div class="row-between"><span class="text-muted">ناشر</span><span>@(_source.Publisher ?? "—")</span></div>
+                    <div class="row-between"><span class="text-muted">زبان</span><span>@(_source.Language ?? "—")</span></div>
+                    <div class="row-between"><span class="text-muted">حجم</span><span class="tabular">@JalaliDate.FormatBytes(_source.SizeBytes)</span></div>
+                    <div class="row-between"><span class="text-muted">صفحه‌ها</span><span class="tabular">@JalaliDate.ToPersianDigits(_source.PageCount)</span></div>
+                    <div class="row-between"><span class="text-muted">نویسه‌ها</span><span class="tabular">@JalaliDate.ToPersianDigits(_source.CharacterCount)</span></div>
+                    @if (!string.IsNullOrWhiteSpace(_source.Url))
+                    {
+                        <div class="row-between"><span class="text-muted">نشانی</span><span class="truncate">@_source.Url</span></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_source.Tags))
+                    {
+                        <div class="row-between"><span class="text-muted">برچسب‌ها</span><span>@_source.Tags</span></div>
+                    }
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title">ارزیابی اعتبار</div>
+                    <div class="card-subtitle">این ارزیابی توسط شما ثبت می‌شود و در هیچ محاسبه‌ای به‌صورت خودکار ساخته نمی‌شود.</div>
+                </div>
+
+                <div class="stack">
+                    <div class="field">
+                        <label class="field-label">امتیاز اعتبار (۰ تا ۱۰۰)</label>
+                        <input class="input" type="number" min="0" max="100" @bind="_reliability" />
+                        <div class="field-hint">خالی بگذارید تا منبع «ارزیابی‌نشده» بماند.</div>
+                    </div>
+                    <div class="field">
+                        <label class="field-label">دلیل ارزیابی</label>
+                        <textarea class="textarea" rows="3" @bind="_reliabilityRationale"
+                                  placeholder="مثلاً: مقاله داوری‌شده در نشریه معتبر، داده‌های ۲۰۲۴"></textarea>
+                    </div>
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="SaveReliabilityAsync">ذخیره ارزیابی</button>
+                </div>
+            </section>
+        </div>
+
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">عملیات</div>
+            </div>
+            <div class="row-wrap">
+                <button class="btn btn-ghost" disabled="@_busy" @onclick="ReprocessAsync">پردازش مجدد</button>
+                <button class="btn btn-ghost" disabled="@_busy" @onclick="ToggleArchiveAsync">
+                    @(_isArchived ? "بازگردانی از بایگانی" : "بایگانی منبع")
+                </button>
+            </div>
+            <div class="field-hint" style="margin-top: var(--space-2);">
+                پردازش مجدد، متن را دوباره استخراج و قطعه‌بندی می‌کند. حذف منبع در این نسخه پیاده‌سازی نشده است؛
+                برای کنار گذاشتن یک منبع از بایگانی استفاده کنید.
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private SourceDetail? _source;
+    private bool _isArchived;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private int? _reliability;
+    private string? _reliabilityRationale;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _source = await SourceApi.GetDetailAsync(Id);
+        if (_source is null)
+        {
+            return;
+        }
+
+        _reliability = _source.ReliabilityRating;
+        _reliabilityRationale = _source.ReliabilityRationale;
+
+        // SourceDetail does not carry the archive flag, so read it from the list projection.
+        var list = await SourceApi.ListAsync(_source.WorkspaceId, includeArchived: true);
+        _isArchived = list.FirstOrDefault(s => s.Id == Id)?.IsArchived ?? false;
+    }
+
+    private async Task SaveReliabilityAsync()
+    {
+        _busy = true;
+        try
+        {
+            await SourceApi.SetReliabilityAsync(Id, _reliability, _reliabilityRationale);
+            await LoadAsync();
+            SetMessage("ارزیابی اعتبار ذخیره شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ذخیره ارزیابی ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReprocessAsync()
+    {
+        _busy = true;
+        try
+        {
+            await SourceApi.ReprocessAsync(Id);
+            await LoadAsync();
+            SetMessage("پردازش مجدد در صف قرار گرفت.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"پردازش مجدد ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleArchiveAsync()
+    {
+        if (_source is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var target = !_isArchived;
+            await SourceApi.SetArchivedAsync(Id, target);
+            await LoadAsync();
+            SetMessage(target ? "منبع بایگانی شد." : "منبع بازگردانی شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تغییر وضعیت ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

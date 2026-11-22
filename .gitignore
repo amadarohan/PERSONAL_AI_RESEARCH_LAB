@@ -1,0 +1,27 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# Build and diagnostic logs produced during development
+build*.log
+restore.log
+ef*.log
+dbcheck.log
+run*.log
+*.html.tmp
+
+# Local runtime data — never commit user content or secrets
+storage/
+src/PersonalResearchLab.Web/storage/
+
+# Environment overrides
+.env
+.env.local
+appsettings.Local.json
+
+# OS noise
+Thumbs.db
+.DS_Store

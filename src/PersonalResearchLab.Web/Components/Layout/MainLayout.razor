@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <NavMenu />
+
+    <div class="app-main">
+        <header class="app-topbar">
+            <div class="topbar-title">رصدخانه دانش</div>
+            <div class="topbar-subtitle">آزمایشگاه پژوهش شخصی</div>
+            <div class="topbar-spacer"></div>
+            <div class="row-wrap text-xs text-muted">
+                <span title="همه زمان‌ها به وقت تهران نمایش داده می‌شوند">
+                    @JalaliDate.FormatDateTime(DateTime.UtcNow)
+                </span>
+            </div>
+        </header>
+
+        <main class="app-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui">
+    خطایی رخ داد. جزئیات در گزارش سرور ثبت شد.
+    <a href="." class="reload">بارگذاری مجدد</a>
+    <span class="dismiss">✕</span>
+</div>

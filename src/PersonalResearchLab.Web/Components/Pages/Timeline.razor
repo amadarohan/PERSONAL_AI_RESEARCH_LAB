@@ -1,0 +1,115 @@
+@page "/timeline"
+@rendermode InteractiveServer
+@inject TimelineService TimelineApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>خط زمانی — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">≡</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">خط زمانی رویدادهای یک فضای کاری را نشان می‌دهد.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">خط زمانی</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                همه رویدادهای ثبت‌شده در فضای <span class="text-cyan">@WorkspaceContext.Active.Name</span>، از تازه به قدیم.
+            </div>
+        </div>
+
+        @if (_view is null)
+        {
+            <div class="skeleton" style="height: 220px;"></div>
+        }
+        else
+        {
+            <section class="card">
+                <div class="row-between">
+                    <div class="row-wrap">
+                        <button class="btn btn-sm @(_typeFilter is null ? "btn-primary" : "btn-ghost")"
+                                @onclick="() => SetFilterAsync(null)">
+                            همه رویدادها
+                        </button>
+                        @foreach (var t in _view.EventTypes)
+                        {
+                            <button class="btn btn-sm @(_typeFilter == t ? "btn-primary" : "btn-ghost")"
+                                    @onclick="() => SetFilterAsync(t)">
+                                @Labels.EventTypeLabel(t)
+                            </button>
+                        }
+                    </div>
+                    <div class="text-xs text-muted">@JalaliDate.ToPersianDigits(_view.Events.Count) رویداد</div>
+                </div>
+            </section>
+
+            @if (_view.Events.Count == 0)
+            {
+                <div class="empty-state card">
+                    <div class="empty-icon">≡</div>
+                    <div class="empty-title">رویدادی ثبت نشده است</div>
+                    <div class="empty-text">
+                        رویدادها هنگام ساخت فضای کاری، بارگذاری منبع، برنامه‌ریزی پژوهش و بازبینی ادعاها ثبت می‌شوند.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <section class="card">
+                    <div class="timeline">
+                        @foreach (var e in _view.Events)
+                        {
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-title">@LegacyText.TimelineTitle(e.Title)</div>
+                                <div class="timeline-time">
+                                    @JalaliDate.FormatDateTime(e.CreatedAtUtc)
+                                    <span class="badge badge-neutral" style="margin-inline-start: var(--space-2);">@Labels.EventTypeLabel(e.EventType)</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(e.Detail))
+                                {
+                                    <div class="timeline-detail">@LegacyText.TimelineDetail(e.Detail)</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+        }
+    </div>
+}
+
+@code {
+    private TimelineView? _view;
+    private string? _typeFilter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _view = null;
+            return;
+        }
+
+        _view = await TimelineApi.GetAsync(workspaceId, _typeFilter);
+    }
+
+    private async Task SetFilterAsync(string? eventType)
+    {
+        _typeFilter = eventType;
+        await LoadAsync();
+    }
+}

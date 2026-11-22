@@ -1,0 +1,201 @@
+@page "/search"
+@rendermode InteractiveServer
+@using System.Globalization
+@inject SearchService SearchApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>جست‌وجوی شواهد — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">⌕</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">جست‌وجو همیشه در محدوده یک فضای کاری انجام می‌شود.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">جست‌وجوی شواهد</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                بازیابی ترکیبی واژگانی و برداری در فضای <span class="text-cyan">@WorkspaceContext.Active.Name</span>.
+                هر نتیجه با دلیل بازیابی و امتیازهای تفکیک‌شده نمایش داده می‌شود.
+            </div>
+        </div>
+
+        <section class="card">
+            <div class="stack">
+                <div class="field">
+                    <label class="field-label">پرسش یا عبارت</label>
+                    <div class="row">
+                        <input class="input" @bind="_query" @bind:event="oninput"
+                               placeholder="مثلاً: معیارهای آمادگی تولید برای عامل‌های هوشمند"
+                               @onkeydown="OnKeyDown" />
+                        <button class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(_query) || _busy)" @onclick="SearchAsync">
+                            جست‌وجو
+                        </button>
+                    </div>
+                </div>
+
+                <div class="row-wrap">
+                    <div class="field" style="min-width: 160px;">
+                        <label class="field-label">تعداد نتایج</label>
+                        <select class="select" @bind="_maxResults">
+                            <option value="5">۵</option>
+                            <option value="10">۱۰</option>
+                            <option value="20">۲۰</option>
+                            <option value="30">۳۰</option>
+                        </select>
+                    </div>
+                    <label class="checkbox-row text-sm" style="align-self: flex-end; padding-bottom: 10px;">
+                        <input type="checkbox" @bind="_crossWorkspace" />
+                        جست‌وجو در سایر فضاهای کاری
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        @if (_message is not null)
+        {
+            <div class="notice notice-danger">
+                <span class="notice-icon">✕</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        @if (_response is not null)
+        {
+            <div class="notice notice-info">
+                <span class="notice-icon">◈</span>
+                <div>
+                    <div class="text-bold">@JalaliDate.ToPersianDigits(_response.Hits.Count) نتیجه یافت شد.</div>
+                    <div class="text-sm">@ExplanationText</div>
+                </div>
+            </div>
+
+            @if (_response.Hits.Count == 0)
+            {
+                <div class="empty-state card">
+                    <div class="empty-icon">∅</div>
+                    <div class="empty-title">هیچ قطعه‌ای با این عبارت مطابقت نداشت</div>
+                    <div class="empty-text">
+                        اگر منابع شما هنوز پردازش نشده‌اند یا تعبیه برداری انجام نشده است، بازیابی برداری نتیجه‌ای نخواهد داشت.
+                        عبارت کوتاه‌تر یا واژه‌های کلیدی دیگر را امتحان کنید.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="stack">
+                    @foreach (var hit in _response.Hits)
+                    {
+                        <article class="passage">
+                            <div class="passage-meta">
+                                <span class="text-bold">@hit.SourceTitle</span>
+                                @if (!string.IsNullOrWhiteSpace(hit.DocumentTitle) && hit.DocumentTitle != hit.SourceTitle)
+                                {
+                                    <span class="text-muted">/ @hit.DocumentTitle</span>
+                                }
+                                @if (hit.PageNumber > 0)
+                                {
+                                    <span class="badge badge-neutral">صفحه @JalaliDate.ToPersianDigits(hit.PageNumber)</span>
+                                }
+                                <span class="badge badge-neutral">قطعه @JalaliDate.ToPersianDigits(hit.ChunkIndex)</span>
+                                <span class="spacer"></span>
+                                <span class="text-xs text-muted">@Labels.RetrievalReasonLabel(hit.RetrievalReason)</span>
+                            </div>
+
+                            <div class="passage-text">@hit.Text</div>
+
+                            <div class="row-wrap text-xs text-muted" style="margin-top: var(--space-3);">
+                                <span>واژگانی: <span class="tabular">@JalaliDate.ToPersianDigits(hit.LexicalScore.ToString("0.###", CultureInfo.InvariantCulture))</span></span>
+                                <span>·</span>
+                                <span>برداری: <span class="tabular">@JalaliDate.ToPersianDigits(hit.VectorScore.ToString("0.###", CultureInfo.InvariantCulture))</span></span>
+                                <span>·</span>
+                                <span>ترکیبی: <span class="tabular text-cyan">@JalaliDate.ToPersianDigits(hit.FusedScore.ToString("0.####", CultureInfo.InvariantCulture))</span></span>
+                                <span class="spacer"></span>
+                                <a class="btn btn-ghost btn-sm" href="/documents/@hit.DocumentId">خواندن سند</a>
+                                <a class="btn btn-ghost btn-sm" href="/sources/@hit.SourceId">منبع</a>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        }
+        else if (!_busy)
+        {
+            <div class="empty-state card">
+                <div class="empty-icon">⌕</div>
+                <div class="empty-title">عبارتی برای جست‌وجو وارد کنید</div>
+                <div class="empty-text">
+                    نتایج از نمایه واژگانی فارسی و بردارهای تعبیه‌شده ساخته می‌شوند و با روش ادغام رتبه‌ای ترکیب می‌شوند.
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string _query = string.Empty;
+    private int _maxResults = 10;
+    private bool _crossWorkspace;
+    private bool _busy;
+    private string? _message;
+    private SearchResponse? _response;
+
+    /// <summary>
+    /// The search service returns a diagnostic explanation in English. The UI is Persian-first,
+    /// so the explanation is rendered from the hit count instead of echoing the raw string.
+    /// </summary>
+    private string ExplanationText => _response is null
+        ? string.Empty
+        : _response.Hits.Count == 0
+            ? "هیچ قطعه‌ای با این عبارت مطابقت نداشت. عبارت دیگری را امتحان کنید یا مطمئن شوید منبع به پایان پردازش رسیده است."
+            : $"{JalaliDate.ToPersianDigits(_response.Hits.Count)} قطعه بازیابی شد. دلیل بازیابی هر نتیجه در کنار آن آمده است.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_query))
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            _response = await SearchApi.SearchAsync(
+                workspaceId,
+                _query,
+                _maxResults,
+                sourceIdFilter: null,
+                includeCrossWorkspace: _crossWorkspace);
+        }
+        catch (Exception ex)
+        {
+            _message = $"جست‌وجو ناموفق بود: {ex.Message}";
+            _response = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

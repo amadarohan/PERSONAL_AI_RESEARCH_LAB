@@ -1,0 +1,319 @@
+﻿@page "/workspaces"
+@rendermode InteractiveServer
+@inject WorkspaceService WorkspaceApi
+@inject WorkspaceContext WorkspaceContext
+@inject NavigationManager Nav
+
+<PageTitle>فضاهای کاری — رصدخانه دانش</PageTitle>
+
+<div class="stack-lg">
+
+    <div class="row-between">
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">فضاهای کاری</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                هر فضای کاری یک مرز مستقل برای منابع، شواهد و سیاست مسیریابی داده است.
+            </div>
+        </div>
+        <div class="row">
+            <label class="checkbox-row text-sm">
+                <input type="checkbox" checked="@_includeArchived" @onchange="ToggleArchivedAsync" />
+                نمایش بایگانی‌شده‌ها
+            </label>
+            <button class="btn btn-primary btn-sm" @onclick="() => _showCreate = !_showCreate">
+                @(_showCreate ? "بستن" : "فضای کاری جدید")
+            </button>
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+            <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+            <div>@_message</div>
+        </div>
+    }
+
+    @if (_showCreate)
+    {
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">ساخت فضای کاری</div>
+                <div class="card-subtitle">نام و هدف را مشخص کنید؛ بقیه موارد را می‌توانید بعداً تغییر دهید.</div>
+            </div>
+
+            <div class="stack">
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label">نام</label>
+                        <input class="input" @bind="_newName" @bind:event="oninput" placeholder="مثلاً: معماری عامل‌های هوشمند" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label">سیاست مسیریابی داده</label>
+                        <select class="select" @bind="_newDataRoute">
+                            <option value="@DataRoute.LocalOnly">فقط محلی — هیچ محتوایی از دستگاه خارج نمی‌شود</option>
+                            <option value="@DataRoute.CloudAllowed">ابر مجاز — ارسال به سرویس ابری در صورت پیکربندی</option>
+                        </select>
+                        <div class="field-hint">
+                            این تنظیم تعیین می‌کند که آیا ارائه‌دهنده‌های ابری اجازه سرویس‌دهی به این فضا را دارند یا نه.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label class="field-label">هدف</label>
+                    <input class="input" @bind="_newObjective" placeholder="چه چیزی را می‌خواهید بشناسید؟" />
+                </div>
+
+                <div class="field">
+                    <label class="field-label">توضیح</label>
+                    <textarea class="textarea" rows="2" @bind="_newDescription"></textarea>
+                </div>
+
+                <div class="field">
+                    <label class="field-label">دستورهای هوش مصنوعی (اختیاری)</label>
+                    <textarea class="textarea" rows="2" @bind="_newInstructions"
+                              placeholder="لحن، سطح دقت یا محدودیت‌های مورد نظر شما"></textarea>
+                    <div class="field-hint">این متن به هر درخواست هوش مصنوعی در این فضا افزوده می‌شود.</div>
+                </div>
+
+                <div class="row">
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="CreateAsync">ساخت</button>
+                    <button class="btn btn-ghost" @onclick="() => _showCreate = false">انصراف</button>
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_items is null)
+    {
+        <div class="skeleton" style="height: 180px;"></div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="empty-state card">
+            <div class="empty-icon">▤</div>
+            <div class="empty-title">هیچ فضای کاری‌ای وجود ندارد</div>
+            <div class="empty-text">برای شروع، یک فضای کاری بسازید و سپس منابع خود را بارگذاری کنید.</div>
+        </div>
+    }
+    else
+    {
+        <div class="grid-2">
+            @foreach (var w in _items)
+            {
+                <section class="card" style="border-inline-start: 3px solid @w.AccentColor;">
+                    <div class="row-between">
+                        <div>
+                            <div class="row" style="gap: var(--space-2);">
+                                <a href="/workspaces/@w.Id" class="text-bold" style="color: inherit; text-decoration: none;">@w.Name</a>
+                                @if (WorkspaceContext.ActiveWorkspaceId == w.Id)
+                                {
+                                    <span class="badge badge-cyan">فعال</span>
+                                }
+                                @if (w.IsArchived)
+                                {
+                                    <span class="badge badge-neutral">بایگانی</span>
+                                }
+                            </div>
+                            <div class="text-xs text-muted" style="margin-top: 2px;">@w.Slug</div>
+                        </div>
+                        <span class="badge @Labels.DataRouteBadge(w.DataRoute)">@Labels.DataRouteLabel(w.DataRoute)</span>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(w.Objective))
+                    {
+                        <div class="text-sm text-secondary" style="margin-top: var(--space-3);">@w.Objective</div>
+                    }
+
+                    <div class="row-wrap text-xs text-muted" style="margin-top: var(--space-3);">
+                        <span>@JalaliDate.ToPersianDigits(w.SourceCount) منبع</span>
+                        <span>·</span>
+                        <span>@JalaliDate.ToPersianDigits(w.ClaimCount) ادعا</span>
+                        <span>·</span>
+                        <span>@JalaliDate.ToPersianDigits(w.NodeCount) گره</span>
+                        <span>·</span>
+                        <span>@JalaliDate.ToPersianDigits(w.RunCount) پژوهش</span>
+                        <span>·</span>
+                        <span>@JalaliDate.FormatRelative(w.UpdatedAtUtc)</span>
+                    </div>
+
+                    <div class="row-wrap" style="margin-top: var(--space-4);">
+                        <button class="btn btn-ghost btn-sm"
+                                disabled="@(WorkspaceContext.ActiveWorkspaceId == w.Id)"
+                                @onclick="() => ActivateAsync(w.Id)">
+                            انتخاب به‌عنوان فعال
+                        </button>
+                        <a class="btn btn-ghost btn-sm" href="/workspaces/@w.Id">ویرایش</a>
+                        <button class="btn btn-ghost btn-sm" @onclick="() => ToggleArchiveAsync(w)">
+                            @(w.IsArchived ? "بازگردانی" : "بایگانی")
+                        </button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => RequestDelete(w)">
+                            حذف
+                        </button>
+                    </div>
+
+                    @if (_pendingDeleteId == w.Id)
+                    {
+                        <div class="notice notice-danger" style="margin-top: var(--space-3);">
+                            <span class="notice-icon">!</span>
+                            <div>
+                                <div class="text-bold">حذف «@w.Name» بازگشت‌ناپذیر است.</div>
+                                <div class="text-sm">
+                                    تمام منابع، اسناد، قطعه‌ها، ادعاها، گره‌های دانش، گزارش‌ها و گفت‌وگوهای این فضا حذف می‌شوند.
+                                    برای تأیید، نام فضا را دقیقاً بنویسید.
+                                </div>
+                                <div class="row" style="margin-top: var(--space-3);">
+                                    <input class="input" style="max-width: 260px;" @bind="_deleteConfirmText" @bind:event="oninput" placeholder="@w.Name" />
+                                    <button class="btn btn-danger btn-sm"
+                                            disabled="@(_deleteConfirmText != w.Name || _busy)"
+                                            @onclick="() => DeleteAsync(w)">
+                                        حذف قطعی
+                                    </button>
+                                    <button class="btn btn-ghost btn-sm" @onclick="CancelDelete">انصراف</button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </section>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<WorkspaceSummary>? _items;
+    private bool _includeArchived;
+    private bool _showCreate;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string? _newName;
+    private string? _newObjective;
+    private string? _newDescription;
+    private string? _newInstructions;
+    private DataRoute _newDataRoute = DataRoute.LocalOnly;
+
+    private Guid? _pendingDeleteId;
+    private string? _deleteConfirmText;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _items = await WorkspaceApi.ListAsync(_includeArchived);
+    }
+
+    private async Task ToggleArchivedAsync(ChangeEventArgs args)
+    {
+        _includeArchived = args.Value is bool b && b;
+        await LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            SetMessage("نام فضای کاری الزامی است.", isError: true);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var created = await WorkspaceApi.CreateAsync(new CreateWorkspaceRequest(
+                _newName,
+                _newDescription,
+                _newObjective,
+                DataRoute: _newDataRoute,
+                AiInstructions: _newInstructions));
+
+            await WorkspaceContext.RefreshAsync();
+            await WorkspaceContext.SetActiveAsync(created.Id);
+
+            _showCreate = false;
+            _newName = _newObjective = _newDescription = _newInstructions = null;
+            _newDataRoute = DataRoute.LocalOnly;
+
+            await LoadAsync();
+            SetMessage("فضای کاری ساخته شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ساخت فضای کاری ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ActivateAsync(Guid id)
+    {
+        await WorkspaceContext.SetActiveAsync(id);
+    }
+
+    private async Task ToggleArchiveAsync(WorkspaceSummary workspace)
+    {
+        _busy = true;
+        try
+        {
+            await WorkspaceApi.SetArchivedAsync(workspace.Id, !workspace.IsArchived);
+            await WorkspaceContext.RefreshAsync();
+            await LoadAsync();
+            SetMessage(workspace.IsArchived ? "فضای کاری بازگردانی شد." : "فضای کاری بایگانی شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"تغییر وضعیت ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void RequestDelete(WorkspaceSummary workspace)
+    {
+        _pendingDeleteId = workspace.Id;
+        _deleteConfirmText = null;
+    }
+
+    private void CancelDelete()
+    {
+        _pendingDeleteId = null;
+        _deleteConfirmText = null;
+    }
+
+    private async Task DeleteAsync(WorkspaceSummary workspace)
+    {
+        _busy = true;
+        try
+        {
+            await WorkspaceApi.DeleteAsync(workspace.Id);
+            CancelDelete();
+            await WorkspaceContext.RefreshAsync();
+            await LoadAsync();
+            SetMessage("فضای کاری حذف شد.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"حذف ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}

@@ -1,0 +1,42 @@
+@rendermode InteractiveServer
+
+<div class="app-rail">
+    <a href="/" class="rail-brand" title="رصدخانه دانش" aria-label="رصدخانه دانش">◈</a>
+
+    @foreach (var item in NavItems)
+    {
+        <NavLink class="rail-item" href="@item.Href"
+                 Match="@(item.Exact ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                 title="@item.Label" aria-label="@item.Label">
+            <span class="rail-icon" aria-hidden="true">@item.Icon</span>
+            <span class="rail-label">@item.Short</span>
+        </NavLink>
+    }
+
+    <div class="rail-spacer"></div>
+
+    <NavLink class="rail-item" href="/settings" title="تنظیمات" aria-label="تنظیمات">
+        <span class="rail-icon" aria-hidden="true">⚙</span>
+        <span class="rail-label">تنظیمات</span>
+    </NavLink>
+</div>
+
+@code {
+    private sealed record NavItem(string Href, string Icon, string Label, string Short, bool Exact = false);
+
+    private static readonly NavItem[] NavItems =
+    {
+        new("/", "◉", "مرکز فرمان", "مرکز", Exact: true),
+        new("/workspaces", "▤", "فضاهای کاری", "فضاها"),
+        new("/sources", "▦", "کتابخانه منابع", "منابع"),
+        new("/search", "⌕", "جست‌وجوی شواهد", "جست‌وجو"),
+        new("/companion", "✦", "همراه پژوهش", "همراه"),
+        new("/research", "◈", "پژوهش عمیق", "پژوهش"),
+        new("/knowledge", "⬡", "گراف دانش", "گراف"),
+        new("/claims", "⚖", "ادعاها و شواهد", "ادعاها"),
+        new("/timeline", "≡", "خط زمان", "زمان"),
+        new("/reports", "▣", "گزارش‌ها", "گزارش"),
+        new("/learning", "◐", "یادگیری", "یادگیری"),
+        new("/monitor", "◔", "پایش پردازش", "پایش")
+    };
+}

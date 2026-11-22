@@ -1,0 +1,55 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Windows is required: DpapiSecretStore uses ProtectedData, which is Windows-only.
+    # The code guards with OperatingSystem.IsWindows(), so it compiles anywhere, but the
+    # verified platform for this project is Windows.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore PersonalResearchLab.sln
+
+      - name: Build
+        run: dotnet build PersonalResearchLab.sln --no-restore --configuration Release
+
+      - name: Verify no EnsureCreated
+        shell: pwsh
+        run: |
+          # Schema changes must go through migrations. This guard fails the build if
+          # EnsureCreated appears anywhere in the source tree.
+          $hits = Get-ChildItem -Path src -Recurse -Filter *.cs |
+            Select-String -Pattern 'EnsureCreated'
+          if ($hits) {
+            Write-Error "EnsureCreated found. Use EF Core migrations instead."
+            $hits | ForEach-Object { Write-Output "$($_.Path):$($_.LineNumber)" }
+            exit 1
+          }
+          Write-Output "No EnsureCreated usage found."
+
+      - name: Verify no committed secrets
+        shell: pwsh
+        run: |
+          # storage/ holds user content and the DPAPI secret container. It must never be tracked.
+          $tracked = git ls-files | Select-String -Pattern '^storage/|/storage/'
+          if ($tracked) {
+            Write-Error "Tracked files under storage/. These must not be committed."
+            $tracked | ForEach-Object { Write-Output $_ }
+            exit 1
+          }
+          Write-Output "No tracked storage files."

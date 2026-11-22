@@ -1,0 +1,347 @@
+@page "/monitor"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject JobMonitorService MonitorApi
+@inject WorkspaceContext WorkspaceContext
+@inject ILogger<Monitor> Logger
+
+<PageTitle>پایش پردازش — رصدخانه دانش</PageTitle>
+
+<div class="stack-lg">
+
+    <div class="row-between">
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">پایش پردازش</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                وضعیت کارهای پس‌زمینه، مراحل و امکان لغو. به‌روزرسانی خودکار هر ۳ ثانیه.
+            </div>
+        </div>
+        <div class="row" style="gap: var(--space-2);">
+            <label class="checkbox-row">
+                <input type="checkbox" checked="@_autoRefresh" @onchange="ToggleAutoRefresh" />
+                <span class="text-sm">به‌روزرسانی خودکار</span>
+            </label>
+            <button class="btn btn-ghost btn-sm" @onclick="RefreshAsync">به‌روزرسانی</button>
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+            <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+            <div>@_message</div>
+        </div>
+    }
+
+    <div class="row-wrap">
+        <label class="checkbox-row">
+            <input type="checkbox" checked="@_allWorkspaces" @onchange="ToggleAllWorkspaces" />
+            <span class="text-sm">نمایش کارهای همه فضاهای کاری</span>
+        </label>
+        @if (!_allWorkspaces && WorkspaceContext.Active is not null)
+        {
+            <span class="badge badge-cyan">@WorkspaceContext.Active.Name</span>
+        }
+    </div>
+
+    @if (_jobs is null)
+    {
+        <div class="skeleton" style="height: 220px;"></div>
+    }
+    else if (_jobs.Count == 0)
+    {
+        <div class="empty-state card">
+            <div class="empty-icon">◔</div>
+            <div class="empty-title">کاری ثبت نشده است</div>
+            <div class="empty-text">
+                با بارگذاری یک منبع، کار استخراج و تعبیه‌سازی در صف قرار می‌گیرد و اینجا نمایش داده می‌شود.
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="split">
+            <div class="split-main">
+                <section class="card flush">
+                    <div class="table-wrap">
+                        <table class="data">
+                            <thead>
+                                <tr>
+                                    <th>کار</th>
+                                    <th>نوع</th>
+                                    <th>وضعیت</th>
+                                    <th>پیشرفت</th>
+                                    <th>مرحله</th>
+                                    <th>زمان</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var job in _jobs)
+                                {
+                                    <tr>
+                                        <td style="max-width: 320px;">
+                                            <div class="truncate">@LegacyText.JobTitle(job.Title)</div>
+                                            @if (!string.IsNullOrWhiteSpace(job.FailureReason))
+                                            {
+                                                <div class="text-xs text-crimson truncate">@job.FailureReason</div>
+                                            }
+                                        </td>
+                                        <td class="nowrap text-xs">@Labels.JobTypeLabel(job.JobType)</td>
+                                        <td class="nowrap">
+                                            <span class="badge @Labels.StatusBadge(job.Status)">@Labels.StatusLabel(job.Status)</span>
+                                            @if (job.CancellationRequested)
+                                            {
+                                                <span class="badge badge-amber">لغو درخواست شد</span>
+                                            }
+                                        </td>
+                                        <td style="min-width: 120px;">
+                                            <div class="progress">
+                                                <div class="progress-bar @(job.Status == ProcessingStatus.Running ? "indeterminate" : "")"
+                                                     style="width: @(job.ProgressPercent)%"></div>
+                                            </div>
+                                            <div class="text-xs text-muted tabular">@JalaliDate.ToPersianDigits(job.ProgressPercent)٪</div>
+                                        </td>
+                                        <td class="text-xs">@LegacyText.CurrentStage(job.CurrentStage)</td>
+                                        <td class="nowrap text-xs text-muted">@JalaliDate.FormatRelative(job.CreatedAtUtc)</td>
+                                        <td class="nowrap">
+                                            <button class="btn btn-ghost btn-sm" @onclick="() => SelectJobAsync(job.Id)">جزئیات</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <aside class="split-side">
+                @if (_detail is null)
+                {
+                    <div class="empty-state card">
+                        <div class="empty-icon">◔</div>
+                        <div class="empty-title">کاری انتخاب نشده است</div>
+                        <div class="empty-text">برای دیدن مراحل، یک کار را انتخاب کنید.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack">
+                        <section class="card">
+                            <div class="card-header">
+                                <div class="card-title">@LegacyText.JobTitle(_detail.Title)</div>
+                                <div class="card-subtitle">@Labels.JobTypeLabel(_detail.JobType)</div>
+                            </div>
+
+                            <div class="stack-sm">
+                                <div class="row-wrap">
+                                    <span class="badge @Labels.StatusBadge(_detail.Status)">@Labels.StatusLabel(_detail.Status)</span>
+                                    <span class="badge badge-neutral">تلاش @JalaliDate.ToPersianDigits(_detail.RetryCount)</span>
+                                </div>
+
+                                <div class="progress">
+                                    <div class="progress-bar @(_detail.Status == ProcessingStatus.Running ? "indeterminate" : "")"
+                                         style="width: @(_detail.ProgressPercent)%"></div>
+                                </div>
+
+                                <div class="text-xs text-muted">
+                                    ساخته‌شده: @JalaliDate.FormatDateTime(_detail.CreatedAtUtc)
+                                </div>
+                                @if (_detail.StartedAtUtc is not null)
+                                {
+                                    <div class="text-xs text-muted">شروع: @JalaliDate.FormatDateTime(_detail.StartedAtUtc.Value)</div>
+                                }
+                                @if (_detail.CompletedAtUtc is not null)
+                                {
+                                    <div class="text-xs text-muted">پایان: @JalaliDate.FormatDateTime(_detail.CompletedAtUtc.Value)</div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(_detail.FailureReason))
+                                {
+                                    <div class="notice notice-danger">
+                                        <span class="notice-icon">!</span>
+                                        <div>@_detail.FailureReason</div>
+                                    </div>
+                                }
+
+                                @if (_detail.Status is ProcessingStatus.Pending or ProcessingStatus.Running)
+                                {
+                                    <button class="btn btn-danger btn-sm"
+                                            disabled="@(_detail.CancellationRequested || _busy)"
+                                            @onclick="CancelAsync">
+                                        @(_detail.CancellationRequested ? "لغو درخواست شد" : "درخواست لغو")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-ghost btn-sm" disabled="true">
+                                        این کار پایان یافته است
+                                    </button>
+                                }
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-header">
+                                <div class="card-title">مراحل</div>
+                                <div class="spacer"></div>
+                                <div class="text-xs text-muted">@JalaliDate.ToPersianDigits(_detail.Steps.Count)</div>
+                            </div>
+
+                            @if (_detail.Steps.Count == 0)
+                            {
+                                <div class="text-sm text-muted">مرحله‌ای ثبت نشده است.</div>
+                            }
+                            else
+                            {
+                                <div class="stack-sm">
+                                    @foreach (var step in _detail.Steps)
+                                    {
+                                        <div class="step">
+                                            <div class="step-marker @Labels.StepMarkerClass(step.Status)">
+                                                @Labels.StepMarkerGlyph(step.Status)
+                                            </div>
+                                            <div class="step-body">
+                                                <div class="step-title">@JalaliDate.ToPersianDigits(step.Order). @LegacyText.StageName(step.Name)</div>
+                                                <div class="text-xs text-muted">@Labels.StatusLabel(step.Status)</div>
+                                                @if (!string.IsNullOrWhiteSpace(step.Detail))
+                                                {
+                                                    <div class="step-detail">@LegacyText.StageDetail(step.Detail)</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    </div>
+                }
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<JobSummary>? _jobs;
+    private JobDetail? _detail;
+    private Guid? _selectedJobId;
+    private bool _allWorkspaces;
+    private bool _autoRefresh = true;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    private Timer? _timer;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadAsync();
+        StartTimer();
+    }
+
+    private void StartTimer()
+    {
+        _timer?.Dispose();
+        _timer = new Timer(_ => _ = TickAsync(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private async Task TickAsync()
+    {
+        if (!_autoRefresh || !_refreshGate.Wait(0))
+        {
+            return;
+        }
+
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Auto-refresh tick failed; the circuit may be gone.");
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private Guid? ScopeWorkspaceId => _allWorkspaces ? null : WorkspaceContext.ActiveWorkspaceId;
+
+    private async Task LoadAsync()
+    {
+        _jobs = await MonitorApi.ListAsync(ScopeWorkspaceId);
+
+        if (_selectedJobId is Guid jobId)
+        {
+            _detail = await MonitorApi.GetAsync(jobId);
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task ToggleAutoRefresh(ChangeEventArgs args)
+    {
+        _autoRefresh = args.Value is true;
+        await Task.CompletedTask;
+    }
+
+    private async Task ToggleAllWorkspaces(ChangeEventArgs args)
+    {
+        _allWorkspaces = args.Value is true;
+        _selectedJobId = null;
+        _detail = null;
+        await LoadAsync();
+    }
+
+    private async Task SelectJobAsync(Guid jobId)
+    {
+        _selectedJobId = jobId;
+        _detail = await MonitorApi.GetAsync(jobId);
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_detail is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await MonitorApi.CancelAsync(_detail.Id);
+            await LoadAsync();
+            SetMessage("درخواست لغو ثبت شد. کار در نخستین نقطه بررسی، متوقف می‌شود.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ثبت درخواست لغو ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _refreshGate.Dispose();
+    }
+}

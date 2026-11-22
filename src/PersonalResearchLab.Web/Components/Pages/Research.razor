@@ -1,0 +1,354 @@
+@page "/research"
+@rendermode InteractiveServer
+@inject DeepResearchService ResearchApi
+@inject WorkspaceContext WorkspaceContext
+
+<PageTitle>پژوهش عمیق — رصدخانه دانش</PageTitle>
+
+@if (WorkspaceContext.Active is null)
+{
+    <div class="empty-state card">
+        <div class="empty-icon">◈</div>
+        <div class="empty-title">فضای کاری فعالی انتخاب نشده است</div>
+        <div class="empty-text">پژوهش عمیق روی منابع یک فضای کاری اجرا می‌شود.</div>
+        <a class="btn btn-primary btn-sm" href="/workspaces" style="margin-top: var(--space-4);">رفتن به فضاهای کاری</a>
+    </div>
+}
+else
+{
+    <div class="stack-lg">
+
+        <div>
+            <h1 class="text-bold" style="font-size: var(--text-2xl); margin: 0;">پژوهش عمیق</h1>
+            <div class="text-sm text-secondary" style="margin-top: 4px;">
+                یک برنامه نُه‌مرحله‌ای ساخته می‌شود، سپس با تأیید شما اجرا می‌گردد. هر مرحله وضعیت واقعی خود را گزارش می‌کند.
+            </div>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="notice @(_messageIsError ? "notice-danger" : "notice-info")">
+                <span class="notice-icon">@(_messageIsError ? "✕" : "✓")</span>
+                <div>@_message</div>
+            </div>
+        }
+
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">پژوهش جدید</div>
+                <div class="card-subtitle">هدف را دقیق بنویسید؛ پرسش‌های فرعی از آن استخراج می‌شوند.</div>
+            </div>
+            <div class="stack">
+                <div class="field">
+                    <label class="field-label">هدف پژوهش</label>
+                    <textarea class="textarea" rows="3" @bind="_objective" @bind:event="oninput"
+                              placeholder="مثلاً: معیارهای آمادگی تولید برای عامل‌های هوشمند سازمانی چیست؟"></textarea>
+                </div>
+                <button class="btn btn-primary"
+                        disabled="@(string.IsNullOrWhiteSpace(_objective) || _busy)"
+                        @onclick="CreatePlanAsync">
+                    ساخت برنامه
+                </button>
+            </div>
+        </section>
+
+        <div class="split">
+            <aside class="split-side">
+                <div class="card tight">
+                    <div class="card-title" style="margin-bottom: var(--space-3);">پژوهش‌های این فضا</div>
+
+                    @if (_runs is null)
+                    {
+                        <div class="skeleton" style="height: 80px;"></div>
+                    }
+                    else if (_runs.Count == 0)
+                    {
+                        <div class="text-sm text-muted">هنوز پژوهشی ثبت نشده است.</div>
+                    }
+                    else
+                    {
+                        <div class="stack-sm">
+                            @foreach (var r in _runs)
+                            {
+                                <button class="btn btn-ghost btn-sm"
+                                        style="display:block; width:100%; text-align:start; @(r.Id == _selectedRunId ? "background: var(--surface-3);" : "")"
+                                        @onclick="() => SelectRunAsync(r.Id)">
+                                    <div class="truncate">@r.Objective</div>
+                                    <div class="row-wrap text-xs text-muted" style="margin-top: 2px;">
+                                        <span class="badge @Labels.RunStatusBadge(r.Status)">@Labels.RunStatusLabel(r.Status)</span>
+                                        <span>@JalaliDate.ToPersianDigits(r.FindingCount) یافته</span>
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </aside>
+
+            <div class="split-main">
+                @if (_detail is null)
+                {
+                    <div class="empty-state card">
+                        <div class="empty-icon">◈</div>
+                        <div class="empty-title">پژوهشی انتخاب نشده است</div>
+                        <div class="empty-text">یک پژوهش را از فهرست انتخاب کنید یا پژوهش جدیدی بسازید.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="stack">
+                        <section class="card">
+                            <div class="row-between">
+                                <div>
+                                    <div class="text-bold">@_detail.Objective</div>
+                                    <div class="row-wrap text-xs text-muted" style="margin-top: 4px;">
+                                        <span class="badge @Labels.RunStatusBadge(_detail.Status)">@Labels.RunStatusLabel(_detail.Status)</span>
+                                        @if (_detail.StartedAtUtc is not null)
+                                        {
+                                            <span>شروع: @JalaliDate.FormatDateTime(_detail.StartedAtUtc.Value)</span>
+                                        }
+                                        @if (_detail.CompletedAtUtc is not null)
+                                        {
+                                            <span>پایان: @JalaliDate.FormatDateTime(_detail.CompletedAtUtc.Value)</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    @if (_detail.Status == ResearchRunStatus.AwaitingApproval)
+                                    {
+                                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="ExecuteAsync">
+                                            تأیید و اجرا
+                                        </button>
+                                    }
+                                    else if (_detail.Status == ResearchRunStatus.Running)
+                                    {
+                                        <button class="btn btn-ghost btn-sm" disabled="true">
+                                            در حال اجرا…
+                                        </button>
+                                    }
+                                    <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="RefreshAsync">به‌روزرسانی</button>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_detail.FailureReason))
+                            {
+                                <div class="notice notice-danger" style="margin-top: var(--space-3);">
+                                    <span class="notice-icon">!</span>
+                                    <div>@_detail.FailureReason</div>
+                                </div>
+                            }
+
+                            <div class="field-hint" style="margin-top: var(--space-3);">
+                                جست‌وجوی وب در این نسخه غیرفعال است؛ همه شواهد از منابع محلی همین فضا می‌آیند.
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-header">
+                                <div class="card-title">مراحل برنامه</div>
+                                <div class="spacer"></div>
+                                <div class="text-xs text-muted">
+                                    @JalaliDate.ToPersianDigits(_detail.Steps.Count(s => s.Status == ProcessingStatus.Succeeded))
+                                    از @JalaliDate.ToPersianDigits(_detail.Steps.Count) تکمیل‌شده
+                                </div>
+                            </div>
+
+                            <div class="stack-sm">
+                                @foreach (var step in _detail.Steps)
+                                {
+                                    <div class="step">
+                                        <div class="step-marker @Labels.StepMarkerClass(step.Status)">
+                                            @Labels.StepMarkerGlyph(step.Status)
+                                        </div>
+                                        <div class="step-body">
+                                            <div class="row-between">
+                                                <div class="step-title">
+                                                    @JalaliDate.ToPersianDigits(step.Order). @step.Title
+                                                </div>
+                                                <span class="badge @Labels.StatusBadge(step.Status)">@Labels.StatusLabel(step.Status)</span>
+                                            </div>
+                                            <div class="text-xs text-muted">@Labels.PlanStepLabel(step.Kind)</div>
+                                            @if (!string.IsNullOrWhiteSpace(step.Detail))
+                                            {
+                                                <div class="step-detail">@step.Detail</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(step.OutputSummary))
+                                            {
+                                                <div class="step-detail text-secondary">@step.OutputSummary</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(step.FailureReason))
+                                            {
+                                                <div class="step-detail text-crimson">@step.FailureReason</div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-header">
+                                <div class="card-title">یافته‌ها</div>
+                                <div class="card-subtitle">
+                                    هر یافته با وضعیت شناختی خود برچسب می‌خورد؛ هیچ یافته‌ای بدون شاهد ساخته نمی‌شود.
+                                </div>
+                            </div>
+
+                            @if (_detail.Findings.Count == 0)
+                            {
+                                <div class="empty-state" style="padding: var(--space-6) 0;">
+                                    <div class="empty-icon">∅</div>
+                                    <div class="empty-text">هنوز یافته‌ای ثبت نشده است.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="stack-sm">
+                                    @foreach (var f in _detail.Findings)
+                                    {
+                                        <div class="panel">
+                                            <div class="row-between">
+                                                <div class="text-sm">@f.Statement</div>
+                                                <span class="badge @Labels.EpistemicBadge(f.EpistemicStatus)">
+                                                    @Labels.Epistemic(f.EpistemicStatus)
+                                                </span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(f.Caveat))
+                                            {
+                                                <div class="text-xs text-amber" style="margin-top: var(--space-2);">@f.Caveat</div>
+                                            }
+                                            <div class="text-xs text-muted" style="margin-top: var(--space-2);" title="@f.EvidenceChunkIds">
+                                                @EvidenceSummary(f.EvidenceChunkIds)
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ResearchRunSummary>? _runs;
+    private ResearchRunDetail? _detail;
+    private Guid? _selectedRunId;
+    private string _objective = string.Empty;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await WorkspaceContext.EnsureLoadedAsync();
+        await LoadRunsAsync();
+    }
+
+    private async Task LoadRunsAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            _runs = Array.Empty<ResearchRunSummary>();
+            return;
+        }
+
+        _runs = await ResearchApi.ListRunsAsync(workspaceId);
+    }
+
+    private async Task CreatePlanAsync()
+    {
+        if (WorkspaceContext.ActiveWorkspaceId is not Guid workspaceId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var runId = await ResearchApi.CreatePlanAsync(workspaceId, _objective.Trim());
+            _objective = string.Empty;
+            await LoadRunsAsync();
+            await SelectRunAsync(runId);
+            SetMessage("برنامه پژوهش ساخته شد و در انتظار تأیید شماست.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"ساخت برنامه ناموفق بود: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SelectRunAsync(Guid runId)
+    {
+        _selectedRunId = runId;
+        _detail = await ResearchApi.GetRunAsync(runId);
+    }
+
+    /// <summary>
+    /// Findings store evidence as a comma-separated list of chunk identifiers. Showing raw GUIDs
+    /// tells the reader nothing, so the UI reports how many passages back the finding and keeps
+    /// the identifiers available in the tooltip for traceability.
+    /// </summary>
+    private static string EvidenceSummary(string? evidenceChunkIds)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceChunkIds))
+        {
+            return "بدون شاهد پیوست";
+        }
+
+        var count = evidenceChunkIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Length;
+
+        return count == 0
+            ? "بدون شاهد پیوست"
+            : $"مبتنی بر {JalaliDate.ToPersianDigits(count)} قطعه شاهد";
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_selectedRunId is Guid runId)
+        {
+            await SelectRunAsync(runId);
+            await LoadRunsAsync();
+        }
+    }
+
+    private async Task ExecuteAsync()
+    {
+        if (_selectedRunId is not Guid runId)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ResearchApi.ExecuteAsync(runId);
+            await SelectRunAsync(runId);
+            await LoadRunsAsync();
+            SetMessage("اجرای پژوهش به پایان رسید.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"اجرای پژوهش ناموفق بود: {ex.Message}", isError: true);
+            await SelectRunAsync(runId);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SetMessage(string text, bool isError)
+    {
+        _message = text;
+        _messageIsError = isError;
+    }
+}
